@@ -11,11 +11,12 @@
       "bundleIdentifier": "space.memomind.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0b1220",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -38,7 +39,11 @@
     ],
     "scheme": "memomind",
     "extra": {
-      "apiUrl": "https://api.memomind.space"
+      "apiUrl": "https://api.memomind.space",
+      "router": {},
+      "eas": {
+        "projectId": "88f8cf8b-5b6d-4ce8-869b-535ca765b0fe"
+      }
     }
   }
 }

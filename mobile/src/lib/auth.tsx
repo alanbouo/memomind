@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import * as api from './api'
 import { clearTokens, loadTokens, saveTokens } from './storage'
+import { getAppleIdToken, getGoogleIdToken, SocialProvider } from './social'
 
 type Status = 'loading' | 'signedOut' | 'signedIn' | 'guest'
 
@@ -8,6 +9,8 @@ interface AuthContextValue {
   status: Status
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<void>
+  /** Throws SignInCancelled if the user dismisses the provider's sheet. */
+  signInWithProvider: (provider: SocialProvider) => Promise<void>
   signOut: () => Promise<void>
   enterGuest: () => void
   /** Last guest transcription, kept in memory only. */
@@ -41,6 +44,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('signedIn')
   }, [])
 
+  const signInWithProvider = useCallback(async (provider: SocialProvider) => {
+    const idToken = await (provider === 'apple' ? getAppleIdToken() : getGoogleIdToken())
+    const t = await api.socialLogin(provider, idToken)
+    await saveTokens(t.access_token, t.refresh_token)
+    setStatus('signedIn')
+  }, [])
+
   const signUp = useCallback(
     async (email: string, password: string) => {
       await api.register(email, password)
@@ -54,12 +64,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       signIn,
       signUp,
+      signInWithProvider,
       signOut,
       enterGuest: () => setStatus('guest'),
       guestResult,
       setGuestResult,
     }),
-    [status, signIn, signUp, signOut, guestResult]
+    [status, signIn, signUp, signInWithProvider, signOut, guestResult]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

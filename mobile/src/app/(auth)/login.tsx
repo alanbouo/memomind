@@ -1,6 +1,7 @@
 import { Link } from 'expo-router'
 import { useState } from 'react'
 import { Image, Text, View } from 'react-native'
+import { SocialButtons } from '../../components/SocialButtons'
 import { Button, ErrorText, Field, Muted, Screen } from '../../components/ui'
 import { errorMessage } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
@@ -47,6 +48,8 @@ export default function Login() {
 
         <ErrorText>{error}</ErrorText>
         <Button title={mode === 'signup' ? 'Créer mon compte' : 'Se connecter'} onPress={submit} loading={loading} />
+
+        <SocialButtons />
 
         {mode === 'login' && (
           <Link href="/forgot-password" style={{ color: t.primary, textAlign: 'center', marginTop: 16 }}>

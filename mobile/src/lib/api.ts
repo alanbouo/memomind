@@ -126,6 +126,11 @@ export const login = async (email: string, password: string) => {
   return data as { access_token: string; refresh_token: string }
 }
 
+export const socialLogin = (provider: 'google' | 'apple', idToken: string) =>
+  axios
+    .post(`${API_URL}/auth/social`, { provider, id_token: idToken })
+    .then((r) => r.data as { access_token: string; refresh_token: string })
+
 export const getCurrentUser = () => api.get<{ email: string }>('/me').then((r) => r.data)
 
 export const requestPasswordReset = (email: string) =>
