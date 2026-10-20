@@ -1,3 +1,4 @@
+from typing import Optional
 import re
 import time
 import assemblyai as aai
@@ -82,9 +83,13 @@ def _wait_until_done(job, transcript_id=None):
                         pass
 
 
-def transcribe_audio(audio_path: str, api_key: str):
+def transcribe_audio(audio_path: str, api_key: str, language: Optional[str] = "fr"):
+    """Transcribe an audio file. `language` is an ISO code, or None to auto-detect."""
     aai.settings.api_key = api_key
-    config = TranscriptionConfig(speaker_labels=True, language_code="fr")
+    if language:
+        config = TranscriptionConfig(speaker_labels=True, language_code=language)
+    else:
+        config = TranscriptionConfig(speaker_labels=True, language_detection=True)
     transcriber = Transcriber()
 
     print("⬆️ Uploading and transcribing...")

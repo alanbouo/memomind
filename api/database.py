@@ -105,6 +105,19 @@ class SpeakerMapping(Base):
     transcript = relationship("Transcript", back_populates="speaker_mappings")
 
 
+class LoginCode(Base):
+    """One-time e-mail sign-in code (only a keyed hash of the code is stored)"""
+    __tablename__ = "login_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, index=True, nullable=False)
+    code_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    attempts = Column(Integer, default=0)
+    used = Column(Integer, default=0)  # 0 = still valid, 1 = used or burned
+
+
 class PasswordResetToken(Base):
     """Token for password reset requests"""
     __tablename__ = "password_reset_tokens"

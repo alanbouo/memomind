@@ -63,22 +63,14 @@ api.interceptors.response.use(
   }
 )
 
-export const register = async (email, password) => {
-  const response = await axios.post(`${API_BASE_URL}/register`, {
-    email,
-    password
-  })
+// Passwordless sign-in: ask for an e-mailed code, then exchange it for tokens.
+export const requestEmailCode = async (email) => {
+  const response = await axios.post(`${API_BASE_URL}/auth/email/request`, { email })
   return response.data
 }
 
-export const login = async (username, password) => {
-  const params = new URLSearchParams()
-  params.append('username', username)
-  params.append('password', password)
-
-  const response = await axios.post(`${API_BASE_URL}/token`, params, {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-  })
+export const verifyEmailCode = async (email, code) => {
+  const response = await axios.post(`${API_BASE_URL}/auth/email/verify`, { email, code })
   return response.data
 }
 
@@ -277,25 +269,6 @@ export const sendChatMessageGuest = async (message, transcriptText) => {
   formData.append('transcript_text', transcriptText)
   
   const response = await axios.post(`${API_BASE_URL}/chat/guest`, formData)
-  return response.data
-}
-
-// Password Reset
-export const requestPasswordReset = async (email) => {
-  const response = await axios.post(`${API_BASE_URL}/forgot-password`, { email })
-  return response.data
-}
-
-export const verifyResetToken = async (token) => {
-  const response = await axios.get(`${API_BASE_URL}/verify-reset-token?token=${token}`)
-  return response.data
-}
-
-export const resetPassword = async (token, newPassword) => {
-  const response = await axios.post(`${API_BASE_URL}/reset-password`, {
-    token,
-    new_password: newPassword
-  })
   return response.data
 }
 

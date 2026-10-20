@@ -6,7 +6,6 @@ python-multipart>=0.0.6
 PyJWT[crypto]>=2.8.0
 tqdm>=4.66.0
 sqlalchemy>=2.0.0,<2.2
-bcrypt>=4.0.0
 email-validator>=2.1.0
 psycopg2-binary>=2.9.9  # PostgreSQL adapter (postgresql:// URLs)
 psycopg[binary]>=3.1  # PostgreSQL adapter (postgresql+psycopg:// URLs)

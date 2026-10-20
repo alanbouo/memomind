@@ -19,19 +19,5 @@
     "h1": "Privacy Policy",
     "lead": "",
     "noindex": false
-  },
-  "/forgot-password": {
-    "title": "Forgot your password – MemoMind",
-    "description": "Reset your MemoMind password.",
-    "h1": "Forgot your password?",
-    "lead": "",
-    "noindex": true
-  },
-  "/reset-password": {
-    "title": "Reset your password – MemoMind",
-    "description": "Choose a new MemoMind password.",
-    "h1": "Reset your password",
-    "lead": "",
-    "noindex": true
   }
 }

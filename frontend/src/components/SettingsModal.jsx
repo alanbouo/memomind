@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { clearTokens } from '../utils/auth';
-import { Mic, MessageCircle, Monitor, User, Download, Trash2, AlertTriangle, Check, X, Eye, EyeOff } from 'lucide-react';
+import { Mic, MessageCircle, Monitor, User, Download, Trash2, AlertTriangle, Check, X } from 'lucide-react';
 
 const TABS = [
     { id: 'transcription', label: 'Transcription', icon: Mic },
@@ -57,12 +57,6 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
     });
     
     // Account state
-    const [currentPassword, setCurrentPassword] = useState('');
-    const [newPassword, setNewPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [showPasswords, setShowPasswords] = useState(false);
-    const [newEmail, setNewEmail] = useState('');
-    const [emailPassword, setEmailPassword] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [userEmail, setUserEmail] = useState('');
 
@@ -121,63 +115,6 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
         } catch (err) {
             console.error('Failed to save settings:', err);
             setError('Failed to save settings');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleChangePassword = async () => {
-        if (newPassword !== confirmPassword) {
-            setError('Passwords do not match');
-            return;
-        }
-        if (newPassword.length < 6) {
-            setError('Password must be at least 6 characters');
-            return;
-        }
-        
-        setSaving(true);
-        setError(null);
-        try {
-            await api.post('/account/change-password', {
-                current_password: currentPassword,
-                new_password: newPassword
-            });
-            setSuccess('Password changed successfully');
-            setCurrentPassword('');
-            setNewPassword('');
-            setConfirmPassword('');
-            setTimeout(() => setSuccess(null), 3000);
-        } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to change password');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleChangeEmail = async () => {
-        if (!newEmail || !emailPassword) {
-            setError('Please fill in all fields');
-            return;
-        }
-        
-        setSaving(true);
-        setError(null);
-        try {
-            const response = await api.post('/account/change-email', {
-                new_email: newEmail,
-                password: emailPassword
-            });
-            // Update tokens
-            localStorage.setItem('access_token', response.data.access_token);
-            localStorage.setItem('refresh_token', response.data.refresh_token);
-            setUserEmail(response.data.new_email);
-            setSuccess('Email changed successfully');
-            setNewEmail('');
-            setEmailPassword('');
-            setTimeout(() => setSuccess(null), 3000);
-        } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to change email');
         } finally {
             setSaving(false);
         }
@@ -465,86 +402,10 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                             {/* Account Tab */}
                             {activeTab === 'account' && (
                                 <div className="space-y-8">
-                                    {/* Current Email */}
+                                    {/* Signed in as */}
                                     <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                                         <p className="text-sm text-gray-500 dark:text-gray-400">Current Email</p>
                                         <p className="font-medium text-gray-900 dark:text-white">{userEmail}</p>
-                                    </div>
-
-                                    {/* Change Password */}
-                                    <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Change Password</h3>
-                                        <div className="space-y-3">
-                                            <div className="relative">
-                                                <input
-                                                    type={showPasswords ? 'text' : 'password'}
-                                                    value={currentPassword}
-                                                    onChange={(e) => setCurrentPassword(e.target.value)}
-                                                    placeholder="Current password"
-                                                    className={inputClass}
-                                                />
-                                            </div>
-                                            <div className="relative">
-                                                <input
-                                                    type={showPasswords ? 'text' : 'password'}
-                                                    value={newPassword}
-                                                    onChange={(e) => setNewPassword(e.target.value)}
-                                                    placeholder="New password"
-                                                    className={inputClass}
-                                                />
-                                            </div>
-                                            <div className="relative">
-                                                <input
-                                                    type={showPasswords ? 'text' : 'password'}
-                                                    value={confirmPassword}
-                                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                                    placeholder="Confirm new password"
-                                                    className={inputClass}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowPasswords(!showPasswords)}
-                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                                >
-                                                    {showPasswords ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                                </button>
-                                            </div>
-                                            <button
-                                                onClick={handleChangePassword}
-                                                disabled={saving || !currentPassword || !newPassword || !confirmPassword}
-                                                className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Update Password
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Change Email */}
-                                    <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Change Email</h3>
-                                        <div className="space-y-3">
-                                            <input
-                                                type="email"
-                                                value={newEmail}
-                                                onChange={(e) => setNewEmail(e.target.value)}
-                                                placeholder="New email address"
-                                                className={inputClass}
-                                            />
-                                            <input
-                                                type="password"
-                                                value={emailPassword}
-                                                onChange={(e) => setEmailPassword(e.target.value)}
-                                                placeholder="Confirm with password"
-                                                className={inputClass}
-                                            />
-                                            <button
-                                                onClick={handleChangeEmail}
-                                                disabled={saving || !newEmail || !emailPassword}
-                                                className="w-full py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Update Email
-                                            </button>
-                                        </div>
                                     </div>
 
                                     {/* Export Data */}

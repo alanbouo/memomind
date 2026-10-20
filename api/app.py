@@ -15,10 +15,6 @@ from pathlib import Path
 import shutil, uuid, os, re
 from datetime import datetime, timedelta
 import secrets
-import smtplib
-import ssl
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import threading
 from dotenv import load_dotenv
 
@@ -28,10 +24,12 @@ from scripts.transcribe import transcribe_audio
 from scripts.export import save_transcript_json, save_transcript_txt
 from api import webhooks
 from api.oidc import OIDCError, verify_id_token, verified_email
-from api.database import init_db, get_db, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, PasswordResetToken
+from api.database import init_db, get_db, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, LoginCode
+from api.emailcode import (
+    CODE_TTL_MINUTES, MAX_ATTEMPTS, MAX_CODES_PER_HOUR, RESEND_COOLDOWN_SECONDS,
+    codes_match, generate_code, hash_code, send_login_code,
+)
 from api.auth import (
-    verify_password, 
-    get_password_hash, 
     create_access_token, 
     create_refresh_token,
     decode_token
@@ -61,7 +59,7 @@ OUTPUT_DIR = Path("outputs")
 INPUT_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/email/verify")
 
 QUALITY_PRESETS = {
     "high": "128k",
@@ -70,17 +68,16 @@ QUALITY_PRESETS = {
 }
 
 # Pydantic models
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
-
 class SocialLogin(BaseModel):
     provider: str  # "google" | "apple"
     id_token: str
 
-class LoginRequest(BaseModel):
+class EmailCodeRequest(BaseModel):
     email: EmailStr
-    password: str
+
+class EmailCodeVerify(BaseModel):
+    email: EmailStr
+    code: str
 
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -107,111 +104,17 @@ def get_user_by_email(db: Session, email: str):
     """Get user from database by email"""
     return db.query(User).filter(User.email == email).first()
 
-@app.post("/register")
-async def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user"""
-    # Check if email already exists
-    existing_email = db.query(User).filter(User.email == user_data.email).first()
-    if existing_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-    
-    # Create new user
-    hashed_password = get_password_hash(user_data.password)
-    new_user = User(
-        email=user_data.email,
-        hashed_password=hashed_password
-    )
-    
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+def sign_in_email(db: Session, email: str, source: str) -> dict:
+    """Find or create the account for a verified email and return fresh tokens.
 
-    # Notify the configured signup webhook (background, never blocks the response)
-    webhooks.dispatch(webhooks.EVENT_USER_REGISTERED, {
-        "user": {
-            "id": new_user.id,
-            "email": new_user.email,
-            "created_at": new_user.created_at.isoformat() if new_user.created_at else None,
-        },
-        "source": "web",
-    })
-
-    return {
-        "message": "User created successfully",
-        "email": new_user.email
-    }
-
-
-@app.post("/token")
-async def login(request: Request, db: Session = Depends(get_db)):
-    """Login and get access token - accepts both form data and JSON"""
-    content_type = request.headers.get("content-type", "")
-    
-    # Try to parse the request body
-    if "application/json" in content_type:
-        # JSON body
-        body = await request.json()
-        email = body.get("email") or body.get("username")
-        password = body.get("password")
-    else:
-        # Form data (application/x-www-form-urlencoded or multipart/form-data)
-        form = await request.form()
-        email = form.get("username") or form.get("email")
-        password = form.get("password")
-    
-    if not email or not password:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Missing email/username or password"
-        )
-    
-    # Get user from database by email
-    user = get_user_by_email(db, email)
-    
-    if not user or not verify_password(password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
-    
-    # Create tokens
-    access_token = create_access_token(user.email)
-    refresh_token = create_refresh_token(user.email)
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
-
-@app.post("/auth/social")
-def social_login(data: SocialLogin, db: Session = Depends(get_db)):
-    """Sign in (or sign up) with a Google / Apple ID token.
-
-    The account is matched on the provider-verified email, so signing in with
-    Google and later with Apple (or a password) reaches the same account.
+    Every way in (Google, Apple, e-mail code) lands here, so the same address
+    always reaches the same account.
     """
-    try:
-        claims = verify_id_token(data.provider, data.id_token)
-        email = verified_email(claims)
-    except OIDCError as e:
-        raise HTTPException(status_code=e.status_code, detail=e.detail)
-
     user = db.query(User).filter(func.lower(User.email) == email).first()
     if not user:
-        # Social accounts have no password; store an unguessable one so the
-        # column stays non-null and password login can't be used on it.
-        user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(32)))
+        # There are no passwords any more; the column is non-null, so store a
+        # value no password check could ever match.
+        user = User(email=email, hashed_password="!")
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -221,7 +124,7 @@ def social_login(data: SocialLogin, db: Session = Depends(get_db)):
                 "email": user.email,
                 "created_at": user.created_at.isoformat() if user.created_at else None,
             },
-            "source": data.provider,
+            "source": source,
         })
 
     if not user.is_active:
@@ -232,6 +135,73 @@ def social_login(data: SocialLogin, db: Session = Depends(get_db)):
         "refresh_token": create_refresh_token(user.email),
         "token_type": "bearer",
     }
+
+
+@app.post("/auth/social")
+def social_login(data: SocialLogin, db: Session = Depends(get_db)):
+    """Sign in (or sign up) with a Google / Apple ID token."""
+    try:
+        claims = verify_id_token(data.provider, data.id_token)
+        email = verified_email(claims)
+    except OIDCError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    return sign_in_email(db, email, data.provider)
+
+
+@app.post("/auth/email/request")
+def request_email_code(data: EmailCodeRequest, db: Session = Depends(get_db)):
+    """E-mail a one-time sign-in code. Same answer whether or not an account exists."""
+    email = data.email.strip().lower()
+    now = datetime.utcnow()
+
+    recent = db.query(LoginCode).filter(
+        LoginCode.email == email,
+        LoginCode.created_at > now - timedelta(hours=1),
+    ).order_by(LoginCode.created_at.desc()).all()
+    if recent and (now - recent[0].created_at).total_seconds() < RESEND_COOLDOWN_SECONDS:
+        raise HTTPException(status_code=429, detail="Please wait a minute before asking for another code")
+    if len(recent) >= MAX_CODES_PER_HOUR:
+        raise HTTPException(status_code=429, detail="Too many codes requested, try again later")
+
+    # A new code replaces any earlier one.
+    db.query(LoginCode).filter(LoginCode.email == email, LoginCode.used == 0).update({"used": 1})
+    code = generate_code()
+    db.add(LoginCode(
+        email=email,
+        code_hash=hash_code(email, code),
+        expires_at=now + timedelta(minutes=CODE_TTL_MINUTES),
+    ))
+    db.commit()
+
+    # Send in the background so SMTP latency never blocks the request.
+    threading.Thread(target=send_login_code, args=(email, code)).start()
+    return {"message": "If the address is valid, a code is on its way."}
+
+
+@app.post("/auth/email/verify")
+def verify_email_code(data: EmailCodeVerify, db: Session = Depends(get_db)):
+    """Exchange an e-mailed code for tokens (creating the account if needed)."""
+    email = data.email.strip().lower()
+    invalid = HTTPException(status_code=400, detail="Invalid or expired code")
+
+    entry = db.query(LoginCode).filter(
+        LoginCode.email == email,
+        LoginCode.used == 0,
+        LoginCode.expires_at > datetime.utcnow(),
+    ).order_by(LoginCode.created_at.desc()).first()
+    if not entry:
+        raise invalid
+
+    entry.attempts += 1
+    if entry.attempts > MAX_ATTEMPTS or not codes_match(email, data.code, entry.code_hash):
+        if entry.attempts >= MAX_ATTEMPTS:
+            entry.used = 1  # too many wrong guesses: burn the code
+        db.commit()
+        raise invalid
+
+    entry.used = 1
+    db.commit()
+    return sign_in_email(db, email, "email")
 
 
 @app.post("/refresh")
@@ -268,227 +238,6 @@ async def get_current_user(
         email=user.email,
         created_at=user.created_at.isoformat()
     )
-
-
-# Password Reset Models
-class PasswordResetRequest(BaseModel):
-    email: EmailStr
-
-class PasswordResetConfirm(BaseModel):
-    token: str
-    new_password: str
-
-
-def send_reset_email(to_email: str, reset_token: str, frontend_url: str):
-    """Send password reset email"""
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "465"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_pass = os.getenv("SMTP_PASS")
-    smtp_ssl = os.getenv("SMTP_SSL", "true").lower() == "true"  # Use SSL by default
-    from_email = os.getenv("SMTP_FROM", smtp_user)
-    
-    if not smtp_user or not smtp_pass:
-        # Log but don't fail - for development without email
-        print(f"[DEV MODE] Password reset token for {to_email}: {reset_token}")
-        print(f"[DEV MODE] Reset URL: {frontend_url}/reset-password?token={reset_token}")
-        return True
-    
-    reset_url = f"{frontend_url}/reset-password?token={reset_token}"
-    
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "MemoMind - Reset Your Password"
-    msg["From"] = from_email
-    msg["To"] = to_email
-    
-    text_content = f"""
-Hello,
-
-You requested to reset your password for MemoMind.
-
-Click the link below to reset your password:
-{reset_url}
-
-This link will expire in 1 hour.
-
-If you didn't request this, you can safely ignore this email.
-
-Best regards,
-The MemoMind Team
-"""
-    
-    html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .button {{ display: inline-block; padding: 12px 24px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: 500; }}
-        .footer {{ margin-top: 30px; color: #6b7280; font-size: 14px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h2>Reset Your Password</h2>
-        <p>Hello,</p>
-        <p>You requested to reset your password for MemoMind.</p>
-        <p>Click the button below to reset your password:</p>
-        <p style="margin: 30px 0;">
-            <a href="{reset_url}" class="button">Reset Password</a>
-        </p>
-        <p>Or copy this link: <a href="{reset_url}">{reset_url}</a></p>
-        <p>This link will expire in 1 hour.</p>
-        <p class="footer">
-            If you didn't request this, you can safely ignore this email.<br>
-            — The MemoMind Team
-        </p>
-    </div>
-</body>
-</html>
-"""
-    
-    msg.attach(MIMEText(text_content, "plain"))
-    msg.attach(MIMEText(html_content, "html"))
-    
-    import sys
-    try:
-        print(f"[EMAIL] Attempting to connect to {smtp_host}:{smtp_port} (SSL={smtp_ssl})", flush=True)
-        if smtp_ssl:
-            # Use SSL connection (port 465)
-            context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=30) as server:
-                print(f"[EMAIL] Connected, logging in as {smtp_user}")
-                server.login(smtp_user, smtp_pass)
-                print(f"[EMAIL] Logged in, sending to {to_email}")
-                server.sendmail(from_email, to_email, msg.as_string())
-                print(f"[EMAIL] Email sent successfully to {to_email}")
-        else:
-            # Use STARTTLS (port 587)
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
-                print(f"[EMAIL] Connected, starting TLS")
-                server.starttls()
-                print(f"[EMAIL] TLS started, logging in as {smtp_user}")
-                server.login(smtp_user, smtp_pass)
-                print(f"[EMAIL] Logged in, sending to {to_email}")
-                server.sendmail(from_email, to_email, msg.as_string())
-                print(f"[EMAIL] Email sent successfully to {to_email}")
-        return True
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"[EMAIL ERROR] Authentication failed: {e}", flush=True)
-        return False
-    except smtplib.SMTPConnectError as e:
-        print(f"[EMAIL ERROR] Connection failed: {e}", flush=True)
-        return False
-    except ssl.SSLError as e:
-        print(f"[EMAIL ERROR] SSL error: {e}", flush=True)
-        return False
-    except Exception as e:
-        print(f"[EMAIL ERROR] Failed to send email: {type(e).__name__}: {e}", flush=True)
-        return False
-
-
-@app.post("/forgot-password")
-async def forgot_password(
-    request: PasswordResetRequest,
-    db: Session = Depends(get_db)
-):
-    """Request a password reset email"""
-    user = get_user_by_email(db, request.email)
-    
-    # Always return success to prevent email enumeration
-    if not user:
-        return {"message": "If an account exists with this email, you will receive a password reset link."}
-    
-    # Invalidate any existing tokens for this user
-    db.query(PasswordResetToken).filter(
-        PasswordResetToken.user_id == user.id,
-        PasswordResetToken.used == 0
-    ).update({"used": 1})
-    
-    # Create new reset token
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=1)
-    
-    reset_token = PasswordResetToken(
-        user_id=user.id,
-        token=token,
-        expires_at=expires_at
-    )
-    db.add(reset_token)
-    db.commit()
-    
-    # Send email in background thread (don't block the response)
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    email_thread = threading.Thread(
-        target=send_reset_email,
-        args=(user.email, token, frontend_url)
-    )
-    email_thread.start()
-    
-    return {"message": "If an account exists with this email, you will receive a password reset link."}
-
-
-@app.post("/reset-password")
-async def reset_password(
-    request: PasswordResetConfirm,
-    db: Session = Depends(get_db)
-):
-    """Reset password using token"""
-    # Find valid token
-    reset_token = db.query(PasswordResetToken).filter(
-        PasswordResetToken.token == request.token,
-        PasswordResetToken.used == 0,
-        PasswordResetToken.expires_at > datetime.utcnow()
-    ).first()
-    
-    if not reset_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid or expired reset token"
-        )
-    
-    # Validate password
-    if len(request.new_password) < 6:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be at least 6 characters"
-        )
-    
-    # Update password
-    user = db.query(User).filter(User.id == reset_token.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    user.hashed_password = get_password_hash(request.new_password)
-    
-    # Mark token as used
-    reset_token.used = 1
-    
-    db.commit()
-    
-    return {"message": "Password has been reset successfully"}
-
-
-@app.get("/verify-reset-token")
-async def verify_reset_token(
-    token: str,
-    db: Session = Depends(get_db)
-):
-    """Verify if a reset token is valid"""
-    reset_token = db.query(PasswordResetToken).filter(
-        PasswordResetToken.token == token,
-        PasswordResetToken.used == 0,
-        PasswordResetToken.expires_at > datetime.utcnow()
-    ).first()
-    
-    if not reset_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid or expired reset token"
-        )
-    
-    return {"valid": True}
 
 
 @app.post("/transcribe")
@@ -533,7 +282,9 @@ async def transcribe_endpoint(
         txt_path = OUTPUT_DIR / f"{base_name}.txt"
 
         convert_to_mp3(input_path, mp3_path, bitrate=QUALITY_PRESETS[quality])
-        job = transcribe_audio(str(mp3_path), api_key)
+        # The user's preferred language; unset means auto-detect.
+        language = requesting_user.settings.default_language if requesting_user and requesting_user.settings else None
+        job = transcribe_audio(str(mp3_path), api_key, language=language or None)
         save_transcript_json(job, json_path)
         save_transcript_txt(job, txt_path)
 
@@ -967,16 +718,6 @@ class SettingsUpdate(BaseModel):
     font_size: Optional[str] = None
 
 
-class PasswordChange(BaseModel):
-    current_password: str
-    new_password: str
-
-
-class EmailChange(BaseModel):
-    new_email: EmailStr
-    password: str
-
-
 @app.get("/settings")
 async def get_settings(
     user: str = Depends(authenticate_token),
@@ -1320,77 +1061,6 @@ async def clear_chat_history(
 
 
 # ============== Account Management ==============
-
-@app.post("/account/change-password")
-async def change_password(
-    password_data: PasswordChange,
-    user: str = Depends(authenticate_token),
-    db: Session = Depends(get_db)
-):
-    """Change user password"""
-    db_user = get_user_by_email(db, user)
-    
-    # Verify current password
-    if not verify_password(password_data.current_password, db_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Current password is incorrect"
-        )
-    
-    # Validate new password
-    if len(password_data.new_password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be at least 6 characters"
-        )
-    
-    # Update password
-    db_user.hashed_password = get_password_hash(password_data.new_password)
-    db.commit()
-    
-    return {"status": "success", "message": "Password changed successfully"}
-
-
-@app.post("/account/change-email")
-async def change_email(
-    email_data: EmailChange,
-    user: str = Depends(authenticate_token),
-    db: Session = Depends(get_db)
-):
-    """Change user email"""
-    db_user = get_user_by_email(db, user)
-    
-    # Verify password
-    if not verify_password(email_data.password, db_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password is incorrect"
-        )
-    
-    # Check if new email already exists
-    existing = db.query(User).filter(User.email == email_data.new_email).first()
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already in use"
-        )
-    
-    # Update email
-    db_user.email = email_data.new_email
-    db.commit()
-    
-    # Generate new tokens with new email
-    access_token = create_access_token(email_data.new_email)
-    refresh_token = create_refresh_token(email_data.new_email)
-    
-    return {
-        "status": "success",
-        "message": "Email changed successfully",
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "new_email": email_data.new_email
-    }
-
 
 @app.get("/account/export")
 async def export_all_data(

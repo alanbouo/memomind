@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Lock, Mail, ArrowRight, Zap, Clock, MessageSquare, Shield } from 'lucide-react'
-import { login, register } from '../services/api'
+import { Mail, KeyRound, ArrowRight, Zap, Clock, MessageSquare, Shield } from 'lucide-react'
+import { requestEmailCode, verifyEmailCode } from '../services/api'
 import { setToken, setRefreshToken } from '../utils/auth'
 import { useRouteSeo } from '../utils/seo'
 
 function Login({ setIsAuthenticated, setGuestMode }) {
   useRouteSeo('/login')
   const navigate = useNavigate()
-  const [view, setView] = useState('home') // 'home' | 'login' | 'signup'
+  const [view, setView] = useState('home') // 'home' | 'login' | 'signup' (same flow, different wording)
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
+  const [code, setCode] = useState('')
+  const [sentTo, setSentTo] = useState(null) // set once a code has been e-mailed
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,53 +21,45 @@ function Login({ setIsAuthenticated, setGuestMode }) {
     navigate('/')
   }
 
-  const handleSubmit = async (e) => {
+  const handleSendCode = async (e) => {
+    e?.preventDefault()
+    setError('')
+    setSuccess('')
+    setLoading(true)
+    try {
+      const address = email.trim().toLowerCase()
+      await requestEmailCode(address)
+      setSentTo(address)
+      setCode('')
+      setSuccess(`We sent a 6-digit code to ${address}.`)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not send the code. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleVerify = async (e) => {
     e.preventDefault()
     setError('')
     setSuccess('')
     setLoading(true)
-
     try {
-      if (view === 'signup') {
-        if (password !== confirmPassword) {
-          setError('Passwords do not match')
-          setLoading(false)
-          return
-        }
-        
-        if (password.length < 6) {
-          setError('Password must be at least 6 characters')
-          setLoading(false)
-          return
-        }
-
-        await register(email, password)
-        setSuccess('Account created successfully!')
-        
-        // Auto login after registration
-        const data = await login(email, password)
-        setToken(data.access_token)
-        setRefreshToken(data.refresh_token)
-        setIsAuthenticated(true)
-      } else {
-        const data = await login(email, password)
-        setToken(data.access_token)
-        setRefreshToken(data.refresh_token)
-        setIsAuthenticated(true)
-      }
+      const data = await verifyEmailCode(sentTo, code.trim())
+      setToken(data.access_token)
+      setRefreshToken(data.refresh_token)
+      setIsAuthenticated(true)
     } catch (err) {
-      const errorMessage = err.response?.data?.detail || 
-        (view === 'signup' ? 'Registration failed. Please try again.' : 'Login failed. Please check your credentials.')
-      setError(errorMessage)
-    } finally {
+      setError(err.response?.data?.detail || 'Invalid or expired code.')
+      setCode('')
       setLoading(false)
     }
   }
 
   const resetForm = () => {
     setEmail('')
-    setPassword('')
-    setConfirmPassword('')
+    setCode('')
+    setSentTo(null)
     setError('')
     setSuccess('')
   }
@@ -270,95 +262,90 @@ function Login({ setIsAuthenticated, setGuestMode }) {
               {view === 'signup' ? 'Create your account' : 'Welcome back'}
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              {view === 'signup' ? 'Start transcribing your audio files' : 'Sign in to continue'}
+              {view === 'signup' ? 'Start transcribing your audio files' : 'We will email you a one-time code'}
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="your.email@example.com"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-700">
-                  Password
-                </label>
-                {view === 'login' && (
-                  <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-700">
-                    Forgot password?
-                  </Link>
-                )}
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder={view === 'signup' ? "Min 6 characters" : "Enter your password"}
-                  required
-                  minLength={view === 'signup' ? 6 : undefined}
-                />
-              </div>
-            </div>
-
-            {view === 'signup' && (
+          {sentTo ? (
+            <form onSubmit={handleVerify} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Confirm Password
+                  6-digit code
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <KeyRound className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Confirm your password"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent tracking-[0.5em] text-lg"
+                    placeholder="000000"
+                    autoFocus
                     required
                   />
                 </div>
               </div>
-            )}
 
-            {error && (
-              <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm">
-                {error}
+              {error && (
+                <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
+              )}
+              {success && (
+                <div className="bg-green-50 text-green-700 px-4 py-3 rounded-lg text-sm">{success}</div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || code.length !== 6}
+                className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+              <div className="flex items-center justify-between text-sm">
+                <button type="button" onClick={handleSendCode} disabled={loading} className="text-blue-600 hover:text-blue-700 disabled:opacity-50">
+                  Send a new code
+                </button>
+                <button type="button" onClick={resetForm} className="text-gray-500 hover:text-gray-700">
+                  Use another email
+                </button>
               </div>
-            )}
-
-            {success && (
-              <div className="bg-green-50 text-green-700 px-4 py-3 rounded-lg text-sm">
-                {success}
+            </form>
+          ) : (
+            <form onSubmit={handleSendCode} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="your.email@example.com"
+                    required
+                  />
+                </div>
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading 
-                ? (view === 'signup' ? 'Creating account...' : 'Signing in...') 
-                : (view === 'signup' ? 'Create Account' : 'Sign In')
-              }
-            </button>
-          </form>
+              {error && (
+                <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Sending...' : 'Email me a code'}
+              </button>
+              <p className="text-xs text-gray-500 text-center">
+                No password needed. Your account is created the first time you sign in.
+              </p>
+            </form>
+          )}
 
           {/* Divider */}
           <div className="relative my-6">
