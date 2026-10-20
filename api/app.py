@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pathlib import Path
 import shutil, uuid, os, re
@@ -26,6 +27,7 @@ from utils.transcript_format import enrich_utterances, render_transcript_text, s
 from scripts.transcribe import transcribe_audio
 from scripts.export import save_transcript_json, save_transcript_txt
 from api import webhooks
+from api.oidc import OIDCError, verify_id_token, verified_email
 from api.database import init_db, get_db, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, PasswordResetToken
 from api.auth import (
     verify_password, 
@@ -71,6 +73,10 @@ QUALITY_PRESETS = {
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
+
+class SocialLogin(BaseModel):
+    provider: str  # "google" | "apple"
+    id_token: str
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -187,6 +193,46 @@ async def login(request: Request, db: Session = Depends(get_db)):
         "refresh_token": refresh_token,
         "token_type": "bearer"
     }
+
+@app.post("/auth/social")
+def social_login(data: SocialLogin, db: Session = Depends(get_db)):
+    """Sign in (or sign up) with a Google / Apple ID token.
+
+    The account is matched on the provider-verified email, so signing in with
+    Google and later with Apple (or a password) reaches the same account.
+    """
+    try:
+        claims = verify_id_token(data.provider, data.id_token)
+        email = verified_email(claims)
+    except OIDCError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if not user:
+        # Social accounts have no password; store an unguessable one so the
+        # column stays non-null and password login can't be used on it.
+        user = User(email=email, hashed_password=get_password_hash(secrets.token_urlsafe(32)))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        webhooks.dispatch(webhooks.EVENT_USER_REGISTERED, {
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+            },
+            "source": data.provider,
+        })
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
+
+    return {
+        "access_token": create_access_token(user.email),
+        "refresh_token": create_refresh_token(user.email),
+        "token_type": "bearer",
+    }
+
 
 @app.post("/refresh")
 async def refresh_token_endpoint(refresh_token: str = Form(...)):
@@ -577,7 +623,7 @@ async def transcribe_guest(
     """
     GUEST_MAX_SIZE = 5 * 1024 * 1024  # 5MB
     
-    api_key = os.getenv("ASSEMBLYAI_API_KEY")
+    api_key = os.getenv("AAI_API_KEY") or os.getenv("ASSEMBLYAI_API_KEY")
     if not api_key:
         return JSONResponse(status_code=500, content={"error": "API key not configured"})
 
