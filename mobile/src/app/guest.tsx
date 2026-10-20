@@ -18,9 +18,9 @@ export default function Guest() {
       <Screen>
         <Muted style={{ marginBottom: 16 }}>Mode invité : la transcription n&apos;est pas sauvegardée. Créez un compte pour conserver votre historique.</Muted>
         <UploadPanel
-          onSubmit={async (audio, q, onProgress) => {
+          onSubmit={async (audio, onProgress) => {
             try {
-              setGuestResult(await transcribeAudioGuest(audio, q, onProgress))
+              setGuestResult(await transcribeAudioGuest(audio, onProgress))
             } catch (e) {
               throw new Error(errorMessage(e, 'Échec de la transcription'))
             }

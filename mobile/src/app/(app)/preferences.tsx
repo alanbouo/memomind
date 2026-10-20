@@ -1,52 +1,93 @@
+import * as Sharing from 'expo-sharing'
 import { useEffect, useState } from 'react'
-import { Alert, Text, View } from 'react-native'
+import { Alert, Pressable, Text, View } from 'react-native'
 import { Button, Card, ErrorText, Field, Heading, Muted, Screen } from '../../components/ui'
-import { changePassword, deleteAccount, errorMessage, getCurrentUser, getSettings, Quality, updateSettings } from '../../lib/api'
+import {
+  deleteAccount,
+  downloadAccountExport,
+  errorMessage,
+  getCurrentUser,
+  getSettings,
+  updateSettings,
+} from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../lib/theme'
 
-const QUALITIES: Quality[] = ['low', 'medium', 'high']
-const QUALITY_LABEL: Record<Quality, string> = { low: 'Basse', medium: 'Moyenne', high: 'Haute' }
+// Empty code = let AssemblyAI detect the language.
+const LANGUAGES = [
+  { code: '', label: 'Détection auto' },
+  { code: 'fr', label: 'Français' },
+  { code: 'en', label: 'Anglais' },
+  { code: 'es', label: 'Espagnol' },
+  { code: 'de', label: 'Allemand' },
+  { code: 'it', label: 'Italien' },
+  { code: 'pt', label: 'Portugais' },
+  { code: 'nl', label: 'Néerlandais' },
+  { code: 'ja', label: 'Japonais' },
+  { code: 'zh', label: 'Chinois' },
+  { code: 'ko', label: 'Coréen' },
+  { code: 'ar', label: 'Arabe' },
+  { code: 'ru', label: 'Russe' },
+]
 
-export default function Settings() {
+function SectionTitle({ children }: { children: string }) {
+  const t = useTheme()
+  return <Text style={{ color: t.muted, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, marginTop: 8 }}>{children}</Text>
+}
+
+export default function Preferences() {
   const t = useTheme()
   const { signOut } = useAuth()
   const [email, setEmail] = useState('')
-  const [quality, setQuality] = useState<Quality>('medium')
-  const [current, setCurrent] = useState('')
-  const [next, setNext] = useState('')
-  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [pwLoading, setPwLoading] = useState(false)
+  const [language, setLanguage] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [userPrompt, setUserPrompt] = useState('')
+  const [promptsSaved, setPromptsSaved] = useState(true)
+  const [promptsMsg, setPromptsMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     getCurrentUser().then((u) => setEmail(u.email)).catch(() => {})
-    getSettings().then((s) => setQuality(s.default_quality)).catch(() => {})
+    getSettings()
+      .then((s) => {
+        setLanguage(s.default_language ?? '')
+        setSystemPrompt(s.system_prompt_template ?? '')
+        setUserPrompt(s.default_user_prompt ?? '')
+      })
+      .catch(() => {})
   }, [])
 
-  const pickQuality = async (q: Quality) => {
-    const previous = quality
-    setQuality(q)
+  const pickLanguage = async (code: string) => {
+    const previous = language
+    setLanguage(code)
     try {
-      await updateSettings({ default_quality: q })
+      await updateSettings({ default_language: code })
     } catch (e) {
-      setQuality(previous)
+      setLanguage(previous)
       Alert.alert('Erreur', errorMessage(e))
     }
   }
 
-  const submitPassword = async () => {
-    setPwMsg(null)
-    if (next.length < 6) return setPwMsg({ ok: false, text: 'Au moins 6 caractères' })
-    setPwLoading(true)
+  const savePrompts = async () => {
+    setPromptsMsg(null)
     try {
-      await changePassword(current, next)
-      setCurrent('')
-      setNext('')
-      setPwMsg({ ok: true, text: 'Mot de passe modifié' })
+      await updateSettings({ system_prompt_template: systemPrompt.trim(), default_user_prompt: userPrompt.trim() })
+      setPromptsSaved(true)
+      setPromptsMsg({ ok: true, text: 'Enregistré' })
     } catch (e) {
-      setPwMsg({ ok: false, text: errorMessage(e) })
+      setPromptsMsg({ ok: false, text: errorMessage(e) })
+    }
+  }
+
+  const exportData = async () => {
+    setExporting(true)
+    try {
+      const uri = await downloadAccountExport()
+      await Sharing.shareAsync(uri, { mimeType: 'application/zip', UTI: 'public.zip-archive', dialogTitle: 'Exporter mes données' })
+    } catch (e) {
+      Alert.alert('Erreur', errorMessage(e, e instanceof Error ? e.message : "L'export a échoué"))
     } finally {
-      setPwLoading(false)
+      setExporting(false)
     }
   }
 
@@ -67,29 +108,63 @@ export default function Settings() {
       },
     ])
 
+  const inputBox = { minHeight: 110, textAlignVertical: 'top' as const, paddingTop: 12 }
+
   return (
     <Screen>
-      <Heading>Compte</Heading>
-      <Muted style={{ marginBottom: 20 }}>{email || '…'}</Muted>
-
+      <SectionTitle>Transcription</SectionTitle>
       <Card style={{ marginBottom: 20 }}>
-        <Text style={{ color: t.text, fontWeight: '700', marginBottom: 10 }}>Qualité par défaut</Text>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {QUALITIES.map((q) => (
-            <Button key={q} title={QUALITY_LABEL[q]} variant={quality === q ? 'primary' : 'secondary'} onPress={() => pickQuality(q)} style={{ flex: 1 }} />
-          ))}
+        <Text style={{ color: t.text, fontWeight: '700', marginBottom: 4 }}>Langue préférée</Text>
+        <Muted style={{ marginBottom: 12 }}>Forcez une langue, ou laissez MemoMind la détecter.</Muted>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {LANGUAGES.map((l) => {
+            const on = language === l.code
+            return (
+              <Pressable
+                key={l.code}
+                onPress={() => pickLanguage(l.code)}
+                style={{ paddingHorizontal: 14, minHeight: 38, justifyContent: 'center', borderRadius: 19, borderWidth: 1.5, borderColor: on ? t.primary : t.border, backgroundColor: on ? t.primarySoft : t.card }}
+              >
+                <Text style={{ color: on ? t.primary : t.text, fontWeight: '600' }}>{l.label}</Text>
+              </Pressable>
+            )
+          })}
         </View>
       </Card>
 
+      <SectionTitle>Prompts</SectionTitle>
       <Card style={{ marginBottom: 20 }}>
-        <Text style={{ color: t.text, fontWeight: '700', marginBottom: 10 }}>Changer le mot de passe</Text>
-        <Field label="Mot de passe actuel" value={current} onChangeText={setCurrent} secureTextEntry />
-        <Field label="Nouveau mot de passe" value={next} onChangeText={setNext} secureTextEntry />
-        {pwMsg && (pwMsg.ok ? <Text style={{ color: t.success, marginBottom: 12 }}>{pwMsg.text}</Text> : <ErrorText>{pwMsg.text}</ErrorText>)}
-        <Button title="Mettre à jour" variant="secondary" onPress={submitPassword} loading={pwLoading} disabled={!current || !next} />
+        <Field
+          label="Prompt système"
+          value={systemPrompt}
+          onChangeText={(v) => {
+            setSystemPrompt(v)
+            setPromptsSaved(false)
+          }}
+          multiline
+          placeholder="Vous êtes un assistant… Utilisez {transcript} pour insérer la transcription."
+          style={inputBox}
+        />
+        <Field
+          label="Prompt lancé automatiquement"
+          value={userPrompt}
+          onChangeText={(v) => {
+            setUserPrompt(v)
+            setPromptsSaved(false)
+          }}
+          multiline
+          placeholder="Ex. Résume cette transcription en 5 points."
+          style={inputBox}
+        />
+        <Muted style={{ marginBottom: 12 }}>Le prompt automatique est envoyé dès que vous ouvrez le chat d&apos;une nouvelle transcription.</Muted>
+        {promptsMsg && (promptsMsg.ok ? <Text style={{ color: t.success, marginBottom: 12 }}>{promptsMsg.text}</Text> : <ErrorText>{promptsMsg.text}</ErrorText>)}
+        <Button title="Enregistrer les prompts" variant="secondary" onPress={savePrompts} disabled={promptsSaved} />
       </Card>
 
-      <Button title="Se déconnecter" variant="secondary" onPress={signOut} />
+      <SectionTitle>Compte</SectionTitle>
+      <Heading>{email || '…'}</Heading>
+      <Button title="Exporter mes données" variant="secondary" onPress={exportData} loading={exporting} style={{ marginTop: 8 }} />
+      <Button title="Se déconnecter" variant="secondary" onPress={signOut} style={{ marginTop: 12 }} />
       <Button title="Supprimer mon compte" variant="danger" onPress={confirmDelete} style={{ marginTop: 12 }} />
     </Screen>
   )

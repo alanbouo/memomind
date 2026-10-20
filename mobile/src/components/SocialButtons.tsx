@@ -34,12 +34,7 @@ export function SocialButtons() {
   }
 
   return (
-    <View style={{ marginTop: 24 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 12 }}>
-        <View style={{ flex: 1, height: 1, backgroundColor: t.border }} />
-        <Muted>ou</Muted>
-        <View style={{ flex: 1, height: 1, backgroundColor: t.border }} />
-      </View>
+    <View>
       <ErrorText>{error}</ErrorText>
       {apple && (
         <AppleAuthentication.AppleAuthenticationButton
@@ -75,6 +70,11 @@ export function SocialButtons() {
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>Continuer avec Google</Text>
         </Pressable>
       )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 4, gap: 12 }}>
+        <View style={{ flex: 1, height: 1, backgroundColor: t.border }} />
+        <Muted>ou</Muted>
+        <View style={{ flex: 1, height: 1, backgroundColor: t.border }} />
+      </View>
     </View>
   )
 }

@@ -11,6 +11,7 @@ import {
   deleteTranscript,
   errorMessage,
   getChatHistory,
+  getSettings,
   getTranscriptText,
   getUtterances,
   listTranscripts,
@@ -20,6 +21,8 @@ import {
   Utterance,
 } from '../../lib/api'
 import { useTheme } from '../../lib/theme'
+
+const autoPrompt = () => getSettings().then((s) => s.default_user_prompt?.trim() || null)
 
 export default function TranscriptScreen() {
   const t = useTheme()
@@ -125,6 +128,7 @@ export default function TranscriptScreen() {
       ) : (
         <ChatPanel
           loadHistory={loadHistory}
+          autoPrompt={autoPrompt}
           send={async (m) => (await sendChatMessage(id, m)).content}
           onClear={async () => {
             await clearChatHistory(id)

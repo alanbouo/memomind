@@ -1,36 +1,67 @@
-import { Link } from 'expo-router'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Image, Text, View } from 'react-native'
 import { SocialButtons } from '../../components/SocialButtons'
 import { Button, ErrorText, Field, Muted, Screen } from '../../components/ui'
-import { errorMessage } from '../../lib/api'
+import { errorMessage, requestEmailCode } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../lib/theme'
 
+const RESEND_SECONDS = 60
+
 export default function Login() {
   const t = useTheme()
-  const { signIn, signUp, enterGuest } = useAuth()
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const { signInWithCode, enterGuest } = useAuth()
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
+  const [code, setCode] = useState('')
+  const [sentTo, setSentTo] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
+  const submitting = useRef(false)
 
-  const submit = async () => {
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = setTimeout(() => setCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [cooldown])
+
+  const sendCode = async () => {
+    const address = email.trim().toLowerCase()
+    if (!address) return setError('Renseignez votre adresse e-mail')
     setError(null)
-    if (!email.trim() || !password) return setError('Renseignez votre email et mot de passe')
-    if (mode === 'signup') {
-      if (password.length < 6) return setError('Le mot de passe doit contenir au moins 6 caractères')
-      if (password !== confirm) return setError('Les mots de passe ne correspondent pas')
-    }
     setLoading(true)
     try {
-      await (mode === 'signup' ? signUp : signIn)(email.trim(), password)
+      await requestEmailCode(address)
+      setSentTo(address)
+      setCode('')
+      setCooldown(RESEND_SECONDS)
     } catch (e) {
-      setError(errorMessage(e, mode === 'signup' ? 'Inscription impossible' : 'Connexion impossible'))
+      setError(errorMessage(e, "Impossible d'envoyer le code"))
+    } finally {
       setLoading(false)
     }
+  }
+
+  const verify = async (value: string) => {
+    if (!sentTo || submitting.current) return
+    submitting.current = true
+    setError(null)
+    setLoading(true)
+    try {
+      await signInWithCode(sentTo, value)
+    } catch (e) {
+      setError(errorMessage(e, 'Code invalide ou expiré'))
+      setCode('')
+      setLoading(false)
+    } finally {
+      submitting.current = false
+    }
+  }
+
+  const onCodeChange = (v: string) => {
+    const digits = v.replace(/\D/g, '').slice(0, 6)
+    setCode(digits)
+    if (digits.length === 6) verify(digits)
   }
 
   return (
@@ -42,31 +73,57 @@ export default function Login() {
           <Muted>Transcrivez vos mémos vocaux</Muted>
         </View>
 
-        <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" textContentType="emailAddress" />
-        <Field label="Mot de passe" value={password} onChangeText={setPassword} secureTextEntry autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} textContentType={mode === 'signup' ? 'newPassword' : 'password'} />
-        {mode === 'signup' && <Field label="Confirmer le mot de passe" value={confirm} onChangeText={setConfirm} secureTextEntry />}
-
-        <ErrorText>{error}</ErrorText>
-        <Button title={mode === 'signup' ? 'Créer mon compte' : 'Se connecter'} onPress={submit} loading={loading} />
-
-        <SocialButtons />
-
-        {mode === 'login' && (
-          <Link href="/forgot-password" style={{ color: t.primary, textAlign: 'center', marginTop: 16 }}>
-            Mot de passe oublié ?
-          </Link>
+        {sentTo ? (
+          <>
+            <Text style={{ color: t.text, fontSize: 18, fontWeight: '700', marginBottom: 4 }}>Saisissez votre code</Text>
+            <Muted style={{ marginBottom: 16 }}>Nous l&apos;avons envoyé à {sentTo}. Il est valable 10 minutes.</Muted>
+            <Field
+              label="Code à 6 chiffres"
+              value={code}
+              onChangeText={onCodeChange}
+              keyboardType="number-pad"
+              autoComplete="one-time-code"
+              textContentType="oneTimeCode"
+              maxLength={6}
+              autoFocus
+              style={{ fontSize: 28, letterSpacing: 10, textAlign: 'center' }}
+            />
+            <ErrorText>{error}</ErrorText>
+            <Button title="Valider" onPress={() => verify(code)} loading={loading} disabled={code.length !== 6} />
+            <Button
+              variant="ghost"
+              title={cooldown > 0 ? `Renvoyer le code (${cooldown} s)` : 'Renvoyer le code'}
+              onPress={sendCode}
+              disabled={cooldown > 0 || loading}
+              style={{ marginTop: 8 }}
+            />
+            <Button
+              variant="ghost"
+              title="Changer d'adresse e-mail"
+              onPress={() => {
+                setSentTo(null)
+                setError(null)
+              }}
+            />
+          </>
+        ) : (
+          <>
+            <SocialButtons />
+            <Field
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
+              onSubmitEditing={sendCode}
+            />
+            <ErrorText>{error}</ErrorText>
+            <Button title="Recevoir un code par e-mail" onPress={sendCode} loading={loading} />
+            <Muted style={{ textAlign: 'center', marginTop: 12 }}>Pas de mot de passe : un code à 6 chiffres suffit. Le compte est créé à la première connexion.</Muted>
+            <Button variant="secondary" title="Continuer sans compte" onPress={enterGuest} style={{ marginTop: 20 }} />
+          </>
         )}
-
-        <Button
-          variant="ghost"
-          title={mode === 'login' ? "Pas de compte ? S'inscrire" : 'Déjà un compte ? Se connecter'}
-          onPress={() => {
-            setMode(mode === 'login' ? 'signup' : 'login')
-            setError(null)
-          }}
-          style={{ marginTop: 8 }}
-        />
-        <Button variant="secondary" title="Continuer sans compte" onPress={enterGuest} style={{ marginTop: 8 }} />
       </View>
     </Screen>
   )

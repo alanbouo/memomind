@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native'
 import { Card, ErrorText, Muted } from '../../components/ui'
 import { errorMessage, listTranscripts, TranscriptSummary } from '../../lib/api'
+import { formatDateTime } from '../../lib/dates'
 import { useTheme } from '../../lib/theme'
 
 const excerpt = (content: string, q: string) => {
@@ -73,7 +74,7 @@ export default function History() {
                 {item.filename}
               </Text>
               <Muted style={{ marginTop: 2 }}>
-                {new Date(item.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })} · {item.word_count} mots
+                {formatDateTime(item.created_at)} · {item.word_count} mots
                 {item.speakers.length ? ` · ${item.speakers.join(', ')}` : ''}
               </Muted>
               <Text style={{ color: t.text, marginTop: 8, lineHeight: 20 }} numberOfLines={3}>

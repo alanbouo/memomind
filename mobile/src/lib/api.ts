@@ -1,5 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import Constants from 'expo-constants'
+import { File, Paths } from 'expo-file-system'
+import { fetch as expoFetch } from 'expo/fetch'
 import {
   clearTokens,
   getAccessToken,
@@ -74,8 +76,6 @@ export const errorMessage = (e: unknown, fallback = 'Une erreur est survenue'): 
 }
 
 // ---------- Types ----------
-export type Quality = 'low' | 'medium' | 'high'
-
 export interface TranscriptSummary {
   id: number
   transcript_id: string
@@ -103,8 +103,9 @@ export interface ChatMessage {
 }
 
 export interface UserSettings {
-  default_quality: Quality
-  theme: string
+  default_language: string | null
+  system_prompt_template: string | null
+  default_user_prompt: string | null
   [key: string]: unknown
 }
 
@@ -115,16 +116,11 @@ export interface PickedAudio {
 }
 
 // ---------- Auth ----------
-export const register = (email: string, password: string) =>
-  axios.post(`${API_URL}/register`, { email, password }).then((r) => r.data)
+export const requestEmailCode = (email: string) =>
+  axios.post(`${API_URL}/auth/email/request`, { email }).then((r) => r.data)
 
-export const login = async (email: string, password: string) => {
-  const params = new URLSearchParams({ username: email, password })
-  const { data } = await axios.post(`${API_URL}/token`, params.toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  })
-  return data as { access_token: string; refresh_token: string }
-}
+export const verifyEmailCode = (email: string, code: string) =>
+  axios.post(`${API_URL}/auth/email/verify`, { email, code }).then((r) => r.data as { access_token: string; refresh_token: string })
 
 export const socialLogin = (provider: 'google' | 'apple', idToken: string) =>
   axios
@@ -133,56 +129,64 @@ export const socialLogin = (provider: 'google' | 'apple', idToken: string) =>
 
 export const getCurrentUser = () => api.get<{ email: string }>('/me').then((r) => r.data)
 
-export const requestPasswordReset = (email: string) =>
-  axios.post(`${API_URL}/forgot-password`, { email }).then((r) => r.data)
-
 // ---------- Transcription ----------
-const buildAudioForm = (audio: PickedAudio, quality: Quality) => {
+const buildAudioForm = (audio: PickedAudio) => {
   const form = new FormData()
   // React Native's FormData accepts { uri, name, type } for files.
   form.append('file', { uri: audio.uri, name: audio.name, type: audio.mimeType } as unknown as Blob)
-  form.append('quality', quality)
+  // Always the best quality: the app no longer exposes the setting.
+  form.append('quality', 'high')
   return form
 }
 
 /**
- * Uploads then simulates progress while the server transcribes (the API is
- * synchronous, as on the web client): upload = 0-25%, processing = 25-95%.
+ * Reports 0-100: upload = 0-25%, then simulated progress while the server
+ * transcribes (the API is synchronous, as on the web client): 25-95%.
+ * A ticker runs from the start so the bar always moves, even if the platform
+ * never reports upload progress.
  */
 const withProgress = async <T,>(
   send: (onUpload: (e: { loaded: number; total?: number }) => void) => Promise<T>,
   onProgress?: (pct: number) => void
 ): Promise<T> => {
-  let timer: ReturnType<typeof setInterval> | null = null
+  const startedAt = Date.now()
   let current = 0
+  let sawUploadEvents = false
+  let uploadDone = false
+  const emit = () => onProgress?.(Math.round(current))
+  emit()
+  const timer = setInterval(() => {
+    // Without upload events, assume the upload is over after a few seconds.
+    const processing = uploadDone || (!sawUploadEvents && Date.now() - startedAt > 8000)
+    current = processing
+      ? Math.min(95, current + (current < 60 ? 1.5 : current < 80 ? 0.8 : 0.3))
+      : Math.min(24, current + (sawUploadEvents ? 0 : 1))
+    emit()
+  }, 600)
   try {
     const result = await send((e) => {
-      if (!onProgress || !e.total || timer) return
-      current = Math.round((e.loaded * 25) / e.total)
-      onProgress(current)
-      if (e.loaded >= e.total) {
-        current = 25
-        timer = setInterval(() => {
-          current = Math.min(95, current + (current < 60 ? 2 : current < 80 ? 1 : 0.5))
-          onProgress(Math.round(current))
-        }, 800)
-      }
+      if (!e.total) return
+      sawUploadEvents = true
+      current = Math.max(current, Math.min(25, (e.loaded * 25) / e.total))
+      if (e.loaded >= e.total) uploadDone = true
+      emit()
     })
-    onProgress?.(100)
+    current = 100
+    emit()
     return result
   } finally {
-    if (timer) clearInterval(timer)
+    clearInterval(timer)
   }
 }
 
 // Transcription of long audio can take minutes.
 const LONG_TIMEOUT = 15 * 60 * 1000
 
-export const transcribeAudio = (audio: PickedAudio, quality: Quality, onProgress?: (p: number) => void) =>
+export const transcribeAudio = (audio: PickedAudio, onProgress?: (p: number) => void) =>
   withProgress(
     (onUploadProgress) =>
       api
-        .post<{ id: string; database_id: number }>('/transcribe', buildAudioForm(audio, quality), {
+        .post<{ id: string; database_id: number }>('/transcribe', buildAudioForm(audio), {
           timeout: LONG_TIMEOUT,
           onUploadProgress,
         })
@@ -196,11 +200,11 @@ export interface GuestResult {
   utterances: Utterance[]
 }
 
-export const transcribeAudioGuest = (audio: PickedAudio, quality: Quality, onProgress?: (p: number) => void) =>
+export const transcribeAudioGuest = (audio: PickedAudio, onProgress?: (p: number) => void) =>
   withProgress(
     (onUploadProgress) =>
       axios
-        .post<GuestResult>(`${API_URL}/transcribe/guest`, buildAudioForm(audio, quality), {
+        .post<GuestResult>(`${API_URL}/transcribe/guest`, buildAudioForm(audio), {
           timeout: LONG_TIMEOUT,
           onUploadProgress,
         })
@@ -251,7 +255,17 @@ export const getSettings = () => api.get<UserSettings>('/settings').then((r) => 
 
 export const updateSettings = (patch: Partial<UserSettings>) => api.put('/settings', patch)
 
-export const changePassword = (current_password: string, new_password: string) =>
-  api.post('/account/change-password', { current_password, new_password })
-
 export const deleteAccount = () => api.delete('/account')
+
+// Fetches the ZIP of all transcripts and returns a local file ready to share.
+export const downloadAccountExport = async (): Promise<string> => {
+  // A cheap authenticated call first, so an expired access token gets refreshed.
+  await getCurrentUser()
+  const res = await expoFetch(`${API_URL}/account/export`, { headers: { Authorization: `Bearer ${getAccessToken()}` } })
+  if (!res.ok) throw new Error("L'export a échoué")
+  const file = new File(Paths.cache, 'memomind-export.zip')
+  if (file.exists) file.delete()
+  file.create()
+  file.write(await res.bytes())
+  return file.uri
+}

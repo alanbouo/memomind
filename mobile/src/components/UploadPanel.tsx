@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons'
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -6,18 +7,13 @@ import {
   useAudioRecorderState,
 } from 'expo-audio'
 import * as DocumentPicker from 'expo-document-picker'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
-import { PickedAudio, Quality } from '../lib/api'
+import { PickedAudio } from '../lib/api'
+import { localStamp } from '../lib/dates'
 import { useTheme } from '../lib/theme'
 import { AudioPreview } from './AudioPreview'
 import { Button, Card, ErrorText, Muted } from './ui'
-
-const QUALITIES: { value: Quality; label: string }[] = [
-  { value: 'low', label: 'Basse' },
-  { value: 'medium', label: 'Moyenne' },
-  { value: 'high', label: 'Haute' },
-]
 
 const fmt = (ms: number) => {
   const s = Math.floor(ms / 1000)
@@ -25,23 +21,28 @@ const fmt = (ms: number) => {
 }
 
 interface Props {
-  defaultQuality?: Quality
   /** Runs the upload; progress is reported 0-100. Throws on failure. */
-  onSubmit: (audio: PickedAudio, quality: Quality, onProgress: (p: number) => void) => Promise<void>
+  onSubmit: (audio: PickedAudio, onProgress: (p: number) => void) => Promise<void>
 }
 
-export function UploadPanel({ defaultQuality = 'medium', onSubmit }: Props) {
+export function UploadPanel({ onSubmit }: Props) {
   const t = useTheme()
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
   const state = useAudioRecorderState(recorder, 250)
-  const [chosenQuality, setQuality] = useState<Quality | null>(null)
-  const quality = chosenQuality ?? defaultQuality
   const [audio, setAudio] = useState<PickedAudio | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
+  const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   const busy = progress !== null
   const recording = state.isRecording
+
+  // Elapsed time while transcribing: proof of life even when the percentage crawls.
+  useEffect(() => {
+    if (!busy) return
+    const timer = setInterval(() => setElapsed((s) => s + 1), 1000)
+    return () => clearInterval(timer)
+  }, [busy])
 
   const pickFile = async () => {
     setError(null)
@@ -71,16 +72,17 @@ export function UploadPanel({ defaultQuality = 'medium', onSubmit }: Props) {
     await recorder.stop()
     await setAudioModeAsync({ allowsRecording: false })
     if (recorder.uri) {
-      setAudio({ uri: recorder.uri, name: `enregistrement-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.m4a`, mimeType: 'audio/mp4' })
+      setAudio({ uri: recorder.uri, name: `enregistrement-${localStamp()}.m4a`, mimeType: 'audio/mp4' })
     }
   }
 
   const submit = async () => {
     if (!audio) return
     setError(null)
+    setElapsed(0)
     setProgress(0)
     try {
-      await onSubmit(audio, quality, setProgress)
+      await onSubmit(audio, setProgress)
       setAudio(null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Échec de la transcription')
@@ -90,73 +92,77 @@ export function UploadPanel({ defaultQuality = 'medium', onSubmit }: Props) {
   }
 
   return (
-    <View style={{ gap: 16 }}>
-      <Card style={{ alignItems: 'center', gap: 12 }}>
+    <View style={{ flex: 1, justifyContent: 'center', gap: 24 }}>
+      <View style={{ alignItems: 'center', gap: 14 }}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={recording ? "Arrêter l'enregistrement" : "Démarrer l'enregistrement"}
           onPress={recording ? stopRecording : startRecording}
           disabled={busy}
-          style={[styles.recBtn, { backgroundColor: recording ? t.danger : t.primary, opacity: busy ? 0.5 : 1 }]}
+          style={[
+            styles.recBtn,
+            { backgroundColor: recording ? t.danger : t.primary, shadowColor: recording ? t.danger : t.primary, opacity: busy ? 0.4 : 1 },
+          ]}
         >
-          <View style={recording ? styles.stopIcon : styles.micDot} />
+          <Ionicons name={recording ? 'stop' : 'mic'} size={recording ? 64 : 84} color="#fff" />
         </Pressable>
-        <Text style={{ color: t.text, fontSize: 28, fontVariant: ['tabular-nums'] }}>
+        <Text style={{ color: t.text, fontSize: 40, fontWeight: '300', fontVariant: ['tabular-nums'] }}>
           {recording ? fmt(state.durationMillis) : '00:00'}
         </Text>
-        <Muted>{recording ? 'Enregistrement en cours…' : 'Touchez pour enregistrer un mémo vocal'}</Muted>
-      </Card>
+        <Muted>{recording ? 'Enregistrement en cours… touchez pour arrêter' : 'Touchez pour enregistrer un mémo vocal'}</Muted>
 
-      <Button title="Choisir un fichier audio/vidéo" variant="secondary" onPress={pickFile} disabled={busy || recording} />
+        {!recording && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Importer un fichier audio ou vidéo"
+            onPress={pickFile}
+            disabled={busy}
+            style={({ pressed }) => [styles.uploadBtn, { borderColor: t.border, backgroundColor: t.card, opacity: busy ? 0.4 : pressed ? 0.8 : 1 }]}
+          >
+            <Ionicons name="cloud-upload-outline" size={20} color={t.primary} />
+            <Text style={{ color: t.text, fontWeight: '600' }}>Importer un audio / une vidéo</Text>
+          </Pressable>
+        )}
+      </View>
 
-      {audio && (
+      {audio && !recording && (
         <Card>
           <AudioPreview key={audio.uri} uri={audio.uri} name={audio.name} />
           <Muted style={{ marginTop: 10 }}>Écoutez avant de transcrire, ou réenregistrez.</Muted>
         </Card>
       )}
 
-      <View>
-        <Muted style={{ marginBottom: 8 }}>Qualité</Muted>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {QUALITIES.map((q) => (
-            <Pressable
-              key={q.value}
-              onPress={() => setQuality(q.value)}
-              style={[
-                styles.chip,
-                { borderColor: quality === q.value ? t.primary : t.border, backgroundColor: quality === q.value ? t.primarySoft : t.card },
-              ]}
-            >
-              <Text style={{ color: quality === q.value ? t.primary : t.text, fontWeight: '600' }}>{q.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
       <ErrorText>{error}</ErrorText>
 
       {busy ? (
         <Card>
           <Muted style={{ marginBottom: 8 }}>
-            {progress < 25 ? 'Envoi…' : 'Transcription en cours (cela peut prendre quelques minutes)…'} {progress}%
+            {progress < 25 ? 'Envoi…' : 'Transcription en cours (cela peut prendre quelques minutes)…'} {progress}% · {fmt(elapsed * 1000)}
           </Muted>
           <View style={[styles.track, { backgroundColor: t.border }]}>
             <View style={[styles.bar, { backgroundColor: t.primary, width: `${progress}%` }]} />
           </View>
         </Card>
       ) : (
-        <Button title="Transcrire" onPress={submit} disabled={!audio || recording} />
+        audio && !recording && <Button title="Transcrire" onPress={submit} />
       )}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  recBtn: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center' },
-  micDot: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#fff' },
-  stopIcon: { width: 26, height: 26, borderRadius: 4, backgroundColor: '#fff' },
-  chip: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  recBtn: {
+    width: 176,
+    height: 176,
+    borderRadius: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1, marginTop: 8 },
   track: { height: 8, borderRadius: 4, overflow: 'hidden' },
   bar: { height: 8, borderRadius: 4 },
 })

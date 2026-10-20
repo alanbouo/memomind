@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { ChatMessage, errorMessage } from '../lib/api'
 import { useTheme } from '../lib/theme'
@@ -8,9 +8,11 @@ interface Props {
   loadHistory?: () => Promise<ChatMessage[]>
   send: (message: string) => Promise<string>
   onClear?: () => Promise<void>
+  /** Resolves the prompt to send automatically when the conversation is empty. */
+  autoPrompt?: () => Promise<string | null>
 }
 
-export function ChatPanel({ loadHistory, send, onClear }: Props) {
+export function ChatPanel({ loadHistory, send, onClear, autoPrompt }: Props) {
   const t = useTheme()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -18,25 +20,48 @@ export function ChatPanel({ loadHistory, send, onClear }: Props) {
   const [error, setError] = useState<string | null>(null)
   const list = useRef<FlatList<ChatMessage>>(null)
 
+  const ask = useCallback(
+    async (text: string) => {
+      setError(null)
+      setSending(true)
+      setMessages((m) => [...m, { role: 'user', content: text }])
+      try {
+        const reply = await send(text)
+        setMessages((m) => [...m, { role: 'assistant', content: reply }])
+      } catch (e) {
+        setError(errorMessage(e, "Le message n'a pas pu être envoyé"))
+      } finally {
+        setSending(false)
+      }
+    },
+    [send]
+  )
+
+  // Load the history; on a fresh conversation, run the user's saved default prompt once.
+  const autoRan = useRef(false)
   useEffect(() => {
-    loadHistory?.().then(setMessages).catch(() => {})
+    let alive = true
+    ;(async () => {
+      const history = (await loadHistory?.().catch(() => [])) ?? []
+      if (!alive) return
+      setMessages(history)
+      if (history.length === 0 && autoPrompt && !autoRan.current) {
+        autoRan.current = true
+        const prompt = await autoPrompt().catch(() => null)
+        if (alive && prompt) await ask(prompt)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadHistory])
 
   const submit = async () => {
     const text = input.trim()
     if (!text || sending) return
     setInput('')
-    setError(null)
-    setSending(true)
-    setMessages((m) => [...m, { role: 'user', content: text }])
-    try {
-      const reply = await send(text)
-      setMessages((m) => [...m, { role: 'assistant', content: reply }])
-    } catch (e) {
-      setError(errorMessage(e, "Le message n'a pas pu être envoyé"))
-    } finally {
-      setSending(false)
-    }
+    await ask(text)
   }
 
   return (

@@ -7,8 +7,8 @@ type Status = 'loading' | 'signedOut' | 'signedIn' | 'guest'
 
 interface AuthContextValue {
   status: Status
-  signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string) => Promise<void>
+  /** Exchanges the code e-mailed to `email` for a session. */
+  signInWithCode: (email: string, code: string) => Promise<void>
   /** Throws SignInCancelled if the user dismisses the provider's sheet. */
   signInWithProvider: (provider: SocialProvider) => Promise<void>
   signOut: () => Promise<void>
@@ -38,8 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => api.setSessionExpiredHandler(null)
   }, [])
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const t = await api.login(email, password)
+  const signInWithCode = useCallback(async (email: string, code: string) => {
+    const t = await api.verifyEmailCode(email, code)
     await saveTokens(t.access_token, t.refresh_token)
     setStatus('signedIn')
   }, [])
@@ -51,26 +51,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('signedIn')
   }, [])
 
-  const signUp = useCallback(
-    async (email: string, password: string) => {
-      await api.register(email, password)
-      await signIn(email, password)
-    },
-    [signIn]
-  )
-
   const value = useMemo(
     () => ({
       status,
-      signIn,
-      signUp,
+      signInWithCode,
       signInWithProvider,
       signOut,
       enterGuest: () => setStatus('guest'),
       guestResult,
       setGuestResult,
     }),
-    [status, signIn, signUp, signInWithProvider, signOut, guestResult]
+    [status, signInWithCode, signInWithProvider, signOut, guestResult]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

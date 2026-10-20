@@ -10,12 +10,13 @@ export default function AppTabs() {
         headerStyle: { backgroundColor: t.card },
         headerTintColor: t.text,
         tabBarActiveTintColor: t.primary,
+        tabBarInactiveTintColor: t.muted,
         tabBarStyle: { backgroundColor: t.card, borderTopColor: t.border },
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Transcrire', tabBarIcon: ({ color, size }) => <Ionicons name="mic" color={color} size={size} /> }} />
       <Tabs.Screen name="history" options={{ title: 'Historique', tabBarIcon: ({ color, size }) => <Ionicons name="time" color={color} size={size} /> }} />
-      <Tabs.Screen name="settings" options={{ title: 'Réglages', tabBarIcon: ({ color, size }) => <Ionicons name="settings" color={color} size={size} /> }} />
+      <Tabs.Screen name="preferences" options={{ title: 'Préférences', tabBarIcon: ({ color, size }) => <Ionicons name="options" color={color} size={size} /> }} />
     </Tabs>
   )
 }

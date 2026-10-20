@@ -6,7 +6,6 @@ export default function AuthLayout() {
   return (
     <Stack screenOptions={{ headerStyle: { backgroundColor: t.card }, headerTintColor: t.text, contentStyle: { backgroundColor: t.bg } }}>
       <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="forgot-password" options={{ title: 'Mot de passe oublié' }} />
     </Stack>
   )
 }
