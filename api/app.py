@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Request
+from fastapi import BackgroundTasks, FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -24,7 +24,7 @@ from scripts.transcribe import transcribe_audio
 from scripts.export import save_transcript_json, save_transcript_txt
 from api import webhooks
 from api.oidc import OIDCError, verify_id_token, verified_email
-from api.database import init_db, get_db, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, LoginCode
+from api.database import init_db, get_db, SessionLocal, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, LoginCode
 from api.emailcode import (
     CODE_TTL_MINUTES, MAX_ATTEMPTS, MAX_CODES_PER_HOUR, RESEND_COOLDOWN_SECONDS,
     codes_match, generate_code, hash_code, send_login_code,
@@ -240,10 +240,85 @@ async def get_current_user(
     )
 
 
+# A transcription still "processing" after this long is considered lost (the
+# server was restarted mid-job); it is then reported as failed.
+STALE_PROCESSING = timedelta(minutes=60)
+
+
+def run_transcription(transcript_pk: int, input_path: Path, quality: str, language: Optional[str],
+                      api_key: str, webhook_context: dict, requested_at: datetime) -> None:
+    """Convert, transcribe and store the result on an existing "processing" row.
+
+    Raises on failure after marking the row failed, so a synchronous caller can
+    report the error; background callers just let it end here.
+    """
+    base_name = input_path.stem
+    mp3_path = OUTPUT_DIR / f"{base_name}.mp3"
+    json_path = OUTPUT_DIR / f"{base_name}.json"
+    txt_path = OUTPUT_DIR / f"{base_name}.txt"
+    db = SessionLocal()  # own session: this may outlive the request that started it
+    try:
+        convert_to_mp3(input_path, mp3_path, bitrate=QUALITY_PRESETS[quality])
+        job = transcribe_audio(str(mp3_path), api_key, language=language)
+        save_transcript_json(job, json_path)
+        save_transcript_txt(job, txt_path)
+
+        # Always use the utterances format, for consistency with speaker mappings
+        if hasattr(job, 'utterances') and job.utterances:
+            transcript_text = "\n".join([f"{utt.speaker}: {utt.text}" for utt in job.utterances])
+        else:
+            transcript_text = job.text if hasattr(job, 'text') else ""
+
+        row = db.query(Transcript).filter(Transcript.id == transcript_pk).first()
+        if row is None:
+            return  # deleted by the user while it was processing
+        row.text_content = transcript_text
+        row.json_content = json.dumps(job.json_response) if hasattr(job, 'json_response') else None
+        row.status = "completed"
+        row.error = None
+        db.commit()
+
+        webhooks.dispatch(webhooks.EVENT_TRANSCRIPTION_COMPLETED, {
+            **webhook_context,
+            "database_id": transcript_pk,
+            "duration_seconds": round((datetime.utcnow() - requested_at).total_seconds(), 2),
+            "word_count": len(transcript_text.split()) if transcript_text else 0,
+            "utterance_count": len(job.utterances) if getattr(job, "utterances", None) else 0,
+        })
+    except Exception as e:
+        db.rollback()
+        row = db.query(Transcript).filter(Transcript.id == transcript_pk).first()
+        if row is not None:
+            row.status = "failed"
+            row.error = str(e)[:2000]
+            db.commit()
+        webhooks.dispatch(webhooks.EVENT_TRANSCRIPTION_FAILED, {**webhook_context, "error": str(e)})
+        raise
+    finally:
+        db.close()
+        # The transcript lives in the database: drop every audio file.
+        for path in (input_path, mp3_path, json_path, txt_path):
+            try:
+                path.unlink(missing_ok=True)
+            except Exception as cleanup_error:
+                print(f"Warning: Failed to cleanup {path}: {cleanup_error}")
+
+
+def _run_in_background(*args) -> None:
+    try:
+        run_transcription(*args)
+    except Exception as e:
+        print(f"[TRANSCRIBE] Background job failed: {e}", flush=True)
+
+
 @app.post("/transcribe")
 async def transcribe_endpoint(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     quality: str = Form("high"),
+    # background=true: answer as soon as the upload is stored and transcribe in
+    # the background (poll GET /transcripts/{id}/status). Default: wait for the result.
+    background: bool = Form(False),
     user: str = Depends(authenticate_token),
     db: Session = Depends(get_db)
 ):
@@ -254,110 +329,65 @@ async def transcribe_endpoint(
     if quality not in QUALITY_PRESETS:
         return JSONResponse(status_code=400, content={"error": "Invalid quality value"})
 
+    requesting_user = get_user_by_email(db, user)
+    if not requesting_user:
+        raise HTTPException(
+            status_code=401,
+            detail="User session expired or invalid. Please log out and log back in."
+        )
+
     uid = uuid.uuid4().hex[:8]
     input_path = INPUT_DIR / f"{uid}_{file.filename}"
     with open(input_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     requested_at = datetime.utcnow()
-    requesting_user = get_user_by_email(db, user)
+    base_name = input_path.stem
     webhook_context = {
-        "request_id": input_path.stem,
+        "request_id": base_name,
         "filename": file.filename,
         "quality": quality,
         "size_bytes": input_path.stat().st_size if input_path.exists() else None,
         "is_guest": False,
         "requested_at": requested_at.isoformat(),
-        "user": {
-            "id": requesting_user.id if requesting_user else None,
-            "email": user,
-        },
+        "user": {"id": requesting_user.id, "email": user},
     }
     webhooks.dispatch(webhooks.EVENT_TRANSCRIPTION_REQUESTED, webhook_context)
 
+    # The entry exists from the moment the upload lands, so it can be renamed and
+    # shown as "in progress" while the transcription runs.
+    row = Transcript(
+        transcript_id=base_name,
+        user_id=requesting_user.id,
+        filename=file.filename,
+        text_content="",
+        status="processing",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    # The user's preferred language; unset means auto-detect.
+    language = (requesting_user.settings.default_language if requesting_user.settings else None) or None
+    job_args = (row.id, input_path, quality, language, api_key, webhook_context, requested_at)
+
+    if background:
+        background_tasks.add_task(_run_in_background, *job_args)
+        return {"id": base_name, "database_id": row.id, "status": "processing"}
+
     try:
-        base_name = input_path.stem
-        mp3_path = OUTPUT_DIR / f"{base_name}.mp3"
-        json_path = OUTPUT_DIR / f"{base_name}.json"
-        txt_path = OUTPUT_DIR / f"{base_name}.txt"
-
-        convert_to_mp3(input_path, mp3_path, bitrate=QUALITY_PRESETS[quality])
-        # The user's preferred language; unset means auto-detect.
-        language = requesting_user.settings.default_language if requesting_user and requesting_user.settings else None
-        job = transcribe_audio(str(mp3_path), api_key, language=language or None)
-        save_transcript_json(job, json_path)
-        save_transcript_txt(job, txt_path)
-
-        # Extract full text from transcript with speaker labels
-        # Always use utterances format for consistency with speaker mappings
-        if hasattr(job, 'utterances') and job.utterances:
-            transcript_text = "\n".join([f"{utt.speaker}: {utt.text}" for utt in job.utterances])
-            # Debug: print first speaker label format
-            if job.utterances:
-                print(f"🔍 First speaker label format: '{job.utterances[0].speaker}'")
-        else:
-            # Fallback to plain text if no utterances
-            transcript_text = job.text if hasattr(job, 'text') else ""
-        
-        # Save transcript to database (re-queried after transcription so the
-        # pooled connection is validated rather than reused after a long wait)
-        db_user = get_user_by_email(db, user)
-        if not db_user:
-            raise HTTPException(
-                status_code=401,
-                detail="User session expired or invalid. Please log out and log back in."
-            )
-
-        new_transcript = Transcript(
-            transcript_id=base_name,
-            user_id=db_user.id,
-            filename=file.filename,
-            text_content=transcript_text,
-            json_content=json.dumps(job.json_response) if hasattr(job, 'json_response') else None
-        )
-        db.add(new_transcript)
-        db.commit()
-        db.refresh(new_transcript)
-
-        # Cleanup: delete audio files (transcript is saved in database)
-        try:
-            if input_path.exists():
-                input_path.unlink()
-            if mp3_path.exists():
-                mp3_path.unlink()
-            if json_path.exists():
-                json_path.unlink()
-            if txt_path.exists():
-                txt_path.unlink()
-        except Exception as cleanup_error:
-            print(f"Warning: Failed to cleanup files: {cleanup_error}")
-
-        webhooks.dispatch(webhooks.EVENT_TRANSCRIPTION_COMPLETED, {
-            **webhook_context,
-            "database_id": new_transcript.id,
-            "duration_seconds": round((datetime.utcnow() - requested_at).total_seconds(), 2),
-            "word_count": len(transcript_text.split()) if transcript_text else 0,
-            "utterance_count": len(job.utterances) if getattr(job, "utterances", None) else 0,
-        })
-
-        return {
-            "id": base_name,
-            "text_file": f"/transcripts/{base_name}?format=txt",
-            "json_file": f"/transcripts/{base_name}?format=json",
-            "database_id": new_transcript.id
-        }
+        run_transcription(*job_args)
     except Exception as e:
-        # Cleanup on error too
-        try:
-            if input_path.exists():
-                input_path.unlink()
-        except:
-            pass
-        webhooks.dispatch(webhooks.EVENT_TRANSCRIPTION_FAILED, {
-            **webhook_context,
-            "error": str(e),
-        })
+        # Synchronous callers get the error back, so don't leave a failed row behind.
+        db.query(Transcript).filter(Transcript.id == row.id).delete()
+        db.commit()
         return JSONResponse(status_code=500, content={"error": str(e)})
+    return {
+        "id": base_name,
+        "text_file": f"/transcripts/{base_name}?format=txt",
+        "json_file": f"/transcripts/{base_name}?format=json",
+        "database_id": row.id,
+    }
 
 
 @app.post("/transcribe/guest")
@@ -532,11 +562,21 @@ async def list_transcripts(
             detail="User session expired or invalid. Please log out and log back in."
         )
     
+    # A job that never finished (server restarted mid-run) would stay "processing" forever.
+    db.query(Transcript).filter(
+        Transcript.user_id == db_user.id,
+        Transcript.status == "processing",
+        Transcript.created_at < datetime.utcnow() - STALE_PROCESSING,
+    ).update({"status": "failed", "error": "The transcription was interrupted. Please try again."})
+    db.commit()
+
     transcripts = db.query(Transcript).filter(Transcript.user_id == db_user.id).order_by(Transcript.created_at.desc()).all()
     
     return [
         {
             "id": t.id,
+            "status": t.status or "completed",
+            "error": t.error,
             "transcript_id": t.transcript_id,
             "filename": t.filename,
             "created_at": t.created_at.isoformat(),
@@ -547,6 +587,25 @@ async def list_transcripts(
         }
         for t in transcripts
     ]
+
+
+@app.get("/transcripts/{transcript_id}/status")
+def get_transcript_status(
+    transcript_id: int,
+    user: str = Depends(authenticate_token),
+    db: Session = Depends(get_db)
+):
+    """Light status check, for polling while a transcription runs in the background."""
+    db_user = get_user_by_email(db, user)
+    row = db.query(Transcript).filter(
+        Transcript.id == transcript_id, Transcript.user_id == db_user.id
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+    if row.status == "processing" and row.created_at < datetime.utcnow() - STALE_PROCESSING:
+        row.status, row.error = "failed", "The transcription was interrupted. Please try again."
+        db.commit()
+    return {"id": row.id, "status": row.status or "completed", "error": row.error, "filename": row.filename}
 
 
 class TranscriptUpdate(BaseModel):
