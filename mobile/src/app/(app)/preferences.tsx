@@ -1,6 +1,7 @@
 import * as Sharing from 'expo-sharing'
-import { useEffect, useState } from 'react'
-import { Alert, Pressable, Text, View } from 'react-native'
+import { useCallback, useEffect, useState } from 'react'
+import { router, useFocusEffect } from 'expo-router'
+import { Alert, Pressable, Switch, Text, View } from 'react-native'
 import { Button, Card, ErrorText, Field, Heading, Muted, Screen } from '../../components/ui'
 import {
   deleteAccount,
@@ -11,6 +12,7 @@ import {
   updateSettings,
 } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
+import { getLocalPrefs, listRecordings, setKeepRecordings, totalSize } from '../../lib/recordings'
 import { useTheme } from '../../lib/theme'
 
 // Empty code = let AssemblyAI detect the language.
@@ -45,6 +47,14 @@ export default function Preferences() {
   const [promptsSaved, setPromptsSaved] = useState(true)
   const [promptsMsg, setPromptsMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [keep, setKeep] = useState(() => getLocalPrefs().keepRecordings)
+  const [local, setLocal] = useState({ count: 0, bytes: 0 })
+
+  useFocusEffect(
+    useCallback(() => {
+      setLocal({ count: listRecordings().length, bytes: totalSize() })
+    }, [])
+  )
 
   useEffect(() => {
     getCurrentUser().then((u) => setEmail(u.email)).catch(() => {})
@@ -130,6 +140,34 @@ export default function Preferences() {
             )
           })}
         </View>
+      </Card>
+
+      <SectionTitle>Enregistrements</SectionTitle>
+      <Card style={{ marginBottom: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontWeight: '700', marginBottom: 4 }}>Garder mes enregistrements</Text>
+            <Muted>
+              {keep
+                ? "L'audio reste sur cet appareil après la transcription. Il n'est jamais synchronisé."
+                : "L'audio est supprimé de cet appareil une fois la transcription terminée."}
+            </Muted>
+          </View>
+          <Switch
+            value={keep}
+            onValueChange={(v) => {
+              setKeep(v)
+              setKeepRecordings(v)
+            }}
+            trackColor={{ true: t.primary }}
+          />
+        </View>
+        <Button
+          title={`Enregistrements locaux (${local.count} · ${(local.bytes / 1e6).toFixed(1)} Mo)`}
+          variant="secondary"
+          onPress={() => router.push('/recordings')}
+          style={{ marginTop: 14 }}
+        />
       </Card>
 
       <SectionTitle>Prompts</SectionTitle>

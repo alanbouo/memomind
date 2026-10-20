@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons'
 import {
+  IOSOutputFormat,
+  RecordingOptions,
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
@@ -7,42 +9,101 @@ import {
   useAudioRecorderState,
 } from 'expo-audio'
 import * as DocumentPicker from 'expo-document-picker'
-import { useEffect, useState } from 'react'
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useFocusEffect } from 'expo-router'
+import { useCallback, useEffect, useState } from 'react'
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { PickedAudio } from '../lib/api'
 import { localStamp } from '../lib/dates'
+import {
+  addRecording,
+  deleteRecording,
+  latestDraft,
+  markRecordingEnded,
+  markRecordingStarted,
+  mimeTypeFor,
+  recoverInterrupted,
+  removeFile,
+} from '../lib/recordings'
 import { useTheme } from '../lib/theme'
 import { AudioPreview } from './AudioPreview'
 import { Button, Card, ErrorText, Muted } from './ui'
 
+// Speech only: mono 16 kHz is what the server converts to anyway, so this halves the upload.
+// The containers are chosen to survive a crash: CAF (iOS) and ADTS (Android) can be read
+// even when the app dies mid-recording, unlike .m4a whose index is written at the very end.
+const speech = (directory: 'cache' | 'document'): RecordingOptions => ({
+  ...RecordingPresets.HIGH_QUALITY,
+  directory,
+  isMeteringEnabled: true,
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 64000,
+  ...(Platform.OS === 'ios'
+    ? { extension: '.caf', ios: { ...RecordingPresets.HIGH_QUALITY.ios, outputFormat: IOSOutputFormat.MPEG4AAC } }
+    : { extension: '.aac', android: { outputFormat: 'aac_adts' as const, audioEncoder: 'aac' as const } }),
+})
+const KEPT = speech('document') // survives OS cache cleaning
+const TEMPORARY = speech('cache')
+
 const fmt = (ms: number) => {
   const s = Math.floor(ms / 1000)
-  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+  const h = Math.floor(s / 3600)
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0')
+  const ss = String(s % 60).padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
 }
+
+type Session = 'idle' | 'recording' | 'paused'
+
+// Crash recovery runs once per app launch, not on every remount.
+let recovered = false
 
 interface Props {
   /** Runs the upload; progress is reported 0-100. Throws on failure. */
   onSubmit: (audio: PickedAudio, onProgress: (p: number) => void) => Promise<void>
+  /**
+   * Keep recordings on the device until they are sent (and survive app restarts).
+   * Off for guests: nothing is stored.
+   */
+  persist?: boolean
 }
 
-export function UploadPanel({ onSubmit }: Props) {
+export function UploadPanel({ onSubmit, persist = false }: Props) {
   const t = useTheme()
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
+  const recorder = useAudioRecorder(persist ? KEPT : TEMPORARY)
   const state = useAudioRecorderState(recorder, 250)
+  const [session, setSession] = useState<Session>('idle')
   const [audio, setAudio] = useState<PickedAudio | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
-  const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
 
   const busy = progress !== null
-  const recording = state.isRecording
+  const active = session !== 'idle'
 
-  // Elapsed time while transcribing: proof of life even when the percentage crawls.
+  // Bring back an unsent recording (and any that a crash cut short) when the screen shows.
+  useFocusEffect(
+    useCallback(() => {
+      if (!persist || session !== 'idle') return
+      if (!recovered) {
+        recovered = true
+        const saved = recoverInterrupted()
+        if (saved) setNote('Un enregistrement interrompu a été récupéré.')
+      }
+      const draft = latestDraft()
+      setAudio((current) => current ?? (draft ? { uri: draft.uri, name: draft.name, mimeType: mimeTypeFor(draft.uri), recordingId: draft.id } : null))
+    }, [persist, session])
+  )
+
+  // A phone call, a disconnected headset… stop the recorder without our involvement.
   useEffect(() => {
-    if (!busy) return
-    const timer = setInterval(() => setElapsed((s) => s + 1), 1000)
-    return () => clearInterval(timer)
-  }, [busy])
+    if (session !== 'recording' || state.isRecording) return
+    const timer = setTimeout(() => {
+      setSession('paused')
+      setNote('Enregistrement interrompu (appel, casque débranché…). Reprenez ou terminez.')
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [session, state.isRecording])
 
   const pickFile = async () => {
     setError(null)
@@ -57,29 +118,88 @@ export function UploadPanel({ onSubmit }: Props) {
 
   const startRecording = async () => {
     setError(null)
+    setNote(null)
     const perm = await requestRecordingPermissionsAsync()
     if (!perm.granted) {
       Alert.alert('Micro refusé', "Autorisez l'accès au micro dans les réglages pour enregistrer.")
       return
     }
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true })
-    await recorder.prepareToRecordAsync()
-    recorder.record()
-    setAudio(null)
+    try {
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: true, interruptionMode: 'doNotMix' })
+      await recorder.prepareToRecordAsync()
+      recorder.record()
+      setSession('recording')
+      setAudio(null)
+      if (persist && recorder.uri) markRecordingStarted(recorder.uri, `enregistrement-${localStamp()}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Impossible de démarrer l'enregistrement")
+    }
+  }
+
+  const togglePause = () => {
+    if (session === 'recording') {
+      recorder.pause()
+      setSession('paused')
+    } else {
+      setNote(null)
+      recorder.record()
+      setSession('recording')
+    }
   }
 
   const stopRecording = async () => {
+    const durationMs = state.durationMillis
+    const uri = recorder.uri
     await recorder.stop()
-    await setAudioModeAsync({ allowsRecording: false })
-    if (recorder.uri) {
-      setAudio({ uri: recorder.uri, name: `enregistrement-${localStamp()}.m4a`, mimeType: 'audio/mp4' })
+    await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false })
+    setSession('idle')
+    setNote(null)
+    if (!uri) return
+    const name = `enregistrement-${localStamp()}`
+    if (persist) {
+      const entry = addRecording({ name, uri, durationMs })
+      markRecordingEnded()
+      setAudio({ uri, name, mimeType: mimeTypeFor(uri), recordingId: entry.id })
+    } else {
+      setAudio({ uri, name: `${name}${uri.slice(uri.lastIndexOf('.'))}`, mimeType: mimeTypeFor(uri) })
     }
   }
+
+  const cancelRecording = () =>
+    Alert.alert("Annuler l'enregistrement ?", 'Ce qui a été enregistré sera supprimé.', [
+      { text: 'Continuer', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          const uri = recorder.uri
+          await recorder.stop().catch(() => {})
+          await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false })
+          if (uri) removeFile(uri)
+          if (persist) markRecordingEnded()
+          setSession('idle')
+          setNote(null)
+        },
+      },
+    ])
+
+  const discardAudio = () =>
+    Alert.alert("Supprimer l'enregistrement ?", persist ? "Le fichier sera effacé de l'appareil." : undefined, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: () => {
+          if (audio?.recordingId) deleteRecording(audio.recordingId)
+          setAudio(null)
+          setError(null)
+        },
+      },
+    ])
 
   const submit = async () => {
     if (!audio) return
     setError(null)
-    setElapsed(0)
     setProgress(0)
     try {
       await onSubmit(audio, setProgress)
@@ -91,44 +211,69 @@ export function UploadPanel({ onSubmit }: Props) {
     }
   }
 
+  // dB (about -60 silence … 0 loud) to 0..1
+  const level = state.metering === undefined ? 0 : Math.max(0, Math.min(1, (state.metering + 60) / 60))
+  const recording = session === 'recording'
+
   return (
     <View style={{ flex: 1, justifyContent: 'center', gap: 24 }}>
       <View style={{ alignItems: 'center', gap: 14 }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={recording ? "Arrêter l'enregistrement" : "Démarrer l'enregistrement"}
-          onPress={recording ? stopRecording : startRecording}
+          accessibilityLabel={active ? "Terminer l'enregistrement" : "Démarrer l'enregistrement"}
+          onPress={active ? stopRecording : startRecording}
           disabled={busy}
           style={[
             styles.recBtn,
-            { backgroundColor: recording ? t.danger : t.primary, shadowColor: recording ? t.danger : t.primary, opacity: busy ? 0.4 : 1 },
+            { backgroundColor: active ? t.danger : t.primary, shadowColor: active ? t.danger : t.primary, opacity: busy ? 0.4 : 1 },
           ]}
         >
-          <Ionicons name={recording ? 'stop' : 'mic'} size={recording ? 64 : 84} color="#fff" />
+          <Ionicons name={active ? 'stop' : 'mic'} size={active ? 64 : 84} color="#fff" />
         </Pressable>
-        <Text style={{ color: t.text, fontSize: 40, fontWeight: '300', fontVariant: ['tabular-nums'] }}>
-          {recording ? fmt(state.durationMillis) : '00:00'}
-        </Text>
-        <Muted>{recording ? 'Enregistrement en cours… touchez pour arrêter' : 'Touchez pour enregistrer un mémo vocal'}</Muted>
+        <Text style={{ color: t.text, fontSize: 40, fontWeight: '300', fontVariant: ['tabular-nums'] }}>{active ? fmt(state.durationMillis) : '00:00'}</Text>
 
-        {!recording && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Importer un fichier audio ou vidéo"
-            onPress={pickFile}
-            disabled={busy}
-            style={({ pressed }) => [styles.uploadBtn, { borderColor: t.border, backgroundColor: t.card, opacity: busy ? 0.4 : pressed ? 0.8 : 1 }]}
-          >
-            <Ionicons name="cloud-upload-outline" size={20} color={t.primary} />
-            <Text style={{ color: t.text, fontWeight: '600' }}>Importer un audio / une vidéo</Text>
-          </Pressable>
+        {active ? (
+          <>
+            <View style={[styles.meterTrack, { backgroundColor: t.border }]}>
+              <View style={[styles.meterBar, { backgroundColor: recording ? t.primary : t.muted, width: `${(recording ? level : 0) * 100}%` }]} />
+            </View>
+            <Muted>{recording ? "Enregistrement en cours… vous pouvez quitter l'app" : 'En pause'}</Muted>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+              <Pressable accessibilityRole="button" onPress={togglePause} style={[styles.pill, { borderColor: t.border, backgroundColor: t.card }]}>
+                <Ionicons name={recording ? 'pause' : 'play'} size={18} color={t.primary} />
+                <Text style={{ color: t.text, fontWeight: '600' }}>{recording ? 'Pause' : 'Reprendre'}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={cancelRecording} style={[styles.pill, { borderColor: t.border, backgroundColor: t.card }]}>
+                <Ionicons name="trash-outline" size={18} color={t.danger} />
+                <Text style={{ color: t.danger, fontWeight: '600' }}>Annuler</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <>
+            <Muted>Touchez pour enregistrer un mémo vocal</Muted>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Importer un fichier audio ou vidéo"
+              onPress={pickFile}
+              disabled={busy}
+              style={({ pressed }) => [styles.pill, { marginTop: 8, borderColor: t.border, backgroundColor: t.card, opacity: busy ? 0.4 : pressed ? 0.8 : 1 }]}
+            >
+              <Ionicons name="cloud-upload-outline" size={20} color={t.primary} />
+              <Text style={{ color: t.text, fontWeight: '600' }}>Importer un audio / une vidéo</Text>
+            </Pressable>
+          </>
         )}
       </View>
 
-      {audio && !recording && (
+      {note && <Muted style={{ textAlign: 'center' }}>{note}</Muted>}
+
+      {audio && !active && (
         <Card>
           <AudioPreview key={audio.uri} uri={audio.uri} name={audio.name} />
-          <Muted style={{ marginTop: 10 }}>Écoutez avant de transcrire, ou réenregistrez.</Muted>
+          <Muted style={{ marginTop: 10 }}>
+            {persist ? 'Enregistré sur votre appareil. Le réseau ne sert qu’à transcrire.' : 'Écoutez avant de transcrire.'}
+          </Muted>
         </Card>
       )}
 
@@ -137,14 +282,24 @@ export function UploadPanel({ onSubmit }: Props) {
       {busy ? (
         <Card>
           <Muted style={{ marginBottom: 8 }}>
-            {progress < 25 ? 'Envoi…' : 'Transcription en cours (cela peut prendre quelques minutes)…'} {progress}% · {fmt(elapsed * 1000)}
+            {persist
+              ? progress >= 100
+                ? 'Lancement de la transcription…'
+                : `Envoi… ${progress}%`
+              : `${progress < 25 ? 'Envoi…' : 'Transcription en cours (cela peut prendre quelques minutes)…'} ${progress}%`}
           </Muted>
           <View style={[styles.track, { backgroundColor: t.border }]}>
             <View style={[styles.bar, { backgroundColor: t.primary, width: `${progress}%` }]} />
           </View>
         </Card>
       ) : (
-        audio && !recording && <Button title="Transcrire" onPress={submit} />
+        audio &&
+        !active && (
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Button title="Supprimer" variant="secondary" onPress={discardAudio} style={{ flex: 1 }} />
+            <Button title="Transcrire" onPress={submit} style={{ flex: 2 }} />
+          </View>
+        )
       )}
     </View>
   )
@@ -162,7 +317,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 10,
   },
-  uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1, marginTop: 8 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1 },
+  meterTrack: { width: 200, height: 6, borderRadius: 3, overflow: 'hidden' },
+  meterBar: { height: 6, borderRadius: 3 },
   track: { height: 8, borderRadius: 4, overflow: 'hidden' },
   bar: { height: 8, borderRadius: 4 },
 })

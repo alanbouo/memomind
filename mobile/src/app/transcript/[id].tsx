@@ -5,21 +5,25 @@ import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, Share, T
 import { ChatPanel } from '../../components/ChatPanel'
 import { PromptModal } from '../../components/PromptModal'
 import { UtteranceList } from '../../components/UtteranceList'
-import { ErrorText } from '../../components/ui'
+import { Button, Card, ErrorText, Muted } from '../../components/ui'
 import {
   clearChatHistory,
   deleteTranscript,
   errorMessage,
   getChatHistory,
   getSettings,
+  getTranscriptStatus,
   getTranscriptText,
   getUtterances,
-  listTranscripts,
   renameTranscript,
   sendChatMessage,
   updateSpeakerMapping,
+  TranscriptStatus,
+  TranscriptSummary,
   Utterance,
 } from '../../lib/api'
+import { cached, readCached } from '../../lib/cache'
+import { findByTranscript, onTranscriptionsCompleted, releaseRecording } from '../../lib/recordings'
 import { useTheme } from '../../lib/theme'
 
 const autoPrompt = () => getSettings().then((s) => s.default_user_prompt?.trim() || null)
@@ -36,26 +40,66 @@ export default function TranscriptScreen() {
   const [renameFile, setRenameFile] = useState(false)
   const [speaker, setSpeaker] = useState<Utterance | null>(null)
 
+  const [status, setStatus] = useState<TranscriptStatus | null>(null)
+  const [offline, setOffline] = useState(false)
+  const [startedAt] = useState(() => Date.now())
+  const [now, setNow] = useState(() => Date.now())
+
   const loadUtterances = useCallback(async () => {
     try {
-      setUtterances((await getUtterances(id)).utterances)
+      const { data, stale } = await cached(`utterances-${id}`, () => getUtterances(id))
+      setUtterances(data.utterances)
+      setOffline(stale)
+      setError(null)
     } catch (e) {
       setError(errorMessage(e))
     }
   }, [id])
 
+  // Follow the transcription until it is done; the entry can be renamed meanwhile.
   useEffect(() => {
     let alive = true
-    getUtterances(id)
-      .then((r) => alive && setUtterances(r.utterances))
-      .catch((e) => alive && setError(errorMessage(e)))
-    listTranscripts()
-      .then((l) => alive && setFilename(l.find((x) => x.id === id)?.filename ?? 'Transcription'))
-      .catch(() => {})
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = async () => {
+      try {
+        const s = await getTranscriptStatus(id)
+        if (!alive) return
+        setStatus(s)
+        setFilename(s.filename)
+        setOffline(false)
+        if (s.status === 'processing') timer = setTimeout(tick, 4000)
+        else if (s.status === 'completed') {
+          onTranscriptionsCompleted([id])
+          loadUtterances()
+        }
+      } catch {
+        if (!alive) return
+        // No network: show the last copy of this transcript if there is one.
+        setFilename(readCached<TranscriptSummary[]>('list')?.find((x) => x.id === id)?.filename ?? 'Transcription')
+        await loadUtterances()
+        if (alive) timer = setTimeout(tick, 10000)
+      }
+    }
+    tick()
     return () => {
       alive = false
+      if (timer) clearTimeout(timer)
     }
-  }, [id])
+  }, [id, loadUtterances])
+
+  // Re-render every few seconds while waiting, for the elapsed time.
+  useEffect(() => {
+    if (status?.status !== 'processing') return
+    const timer = setInterval(() => setNow(Date.now()), 5000)
+    return () => clearInterval(timer)
+  }, [status?.status])
+
+  const retry = async () => {
+    // Free the recording (it becomes a draft again) and drop the failed entry.
+    await deleteTranscript(id).catch(() => {})
+    releaseRecording(id)
+    router.replace('/')
+  }
 
   const withText = async (fn: (text: string) => Promise<unknown> | unknown) => {
     try {
@@ -115,7 +159,28 @@ export default function TranscriptScreen() {
         ))}
       </View>
 
-      {tab === 'text' ? (
+      {offline && <Muted style={{ textAlign: 'center', marginTop: 8 }}>Hors ligne : dernière version enregistrée</Muted>}
+
+      {status?.status === 'processing' ? (
+        <View style={{ padding: 16 }}>
+          <Card style={{ alignItems: 'center', gap: 10 }}>
+            <ActivityIndicator color={t.primary} />
+            <Text style={{ color: t.text, fontWeight: '700' }}>Transcription en cours…</Text>
+            <Muted style={{ textAlign: 'center' }}>
+              {Math.max(1, Math.round((now - startedAt) / 60000))} min · Vous pouvez renommer cette entrée ou quitter l&apos;écran : elle apparaîtra dans l&apos;historique.
+            </Muted>
+          </Card>
+        </View>
+      ) : status?.status === 'failed' ? (
+        <View style={{ padding: 16, gap: 12 }}>
+          <ErrorText>{status.error ?? 'La transcription a échoué.'}</ErrorText>
+          {findByTranscript(id) ? (
+            <Button title="Réessayer avec l'enregistrement" onPress={retry} />
+          ) : (
+            <Muted>Aucun enregistrement local pour relancer cette transcription.</Muted>
+          )}
+        </View>
+      ) : tab === 'text' ? (
         error ? (
           <View style={{ padding: 16 }}>
             <ErrorText>{error}</ErrorText>

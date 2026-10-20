@@ -1,6 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import Constants from 'expo-constants'
-import { File, Paths } from 'expo-file-system'
+import { File, Paths, UploadType } from 'expo-file-system'
 import { fetch as expoFetch } from 'expo/fetch'
 import {
   clearTokens,
@@ -76,8 +76,12 @@ export const errorMessage = (e: unknown, fallback = 'Une erreur est survenue'): 
 }
 
 // ---------- Types ----------
+export type TranscriptState = 'processing' | 'completed' | 'failed'
+
 export interface TranscriptSummary {
   id: number
+  status: TranscriptState
+  error: string | null
   transcript_id: string
   filename: string
   created_at: string
@@ -113,6 +117,8 @@ export interface PickedAudio {
   uri: string
   name: string
   mimeType: string
+  /** Set for recordings kept on the device (see lib/recordings). */
+  recordingId?: string
 }
 
 // ---------- Auth ----------
@@ -182,17 +188,44 @@ const withProgress = async <T,>(
 // Transcription of long audio can take minutes.
 const LONG_TIMEOUT = 15 * 60 * 1000
 
-export const transcribeAudio = (audio: PickedAudio, onProgress?: (p: number) => void) =>
-  withProgress(
-    (onUploadProgress) =>
-      api
-        .post<{ id: string; database_id: number }>('/transcribe', buildAudioForm(audio), {
-          timeout: LONG_TIMEOUT,
-          onUploadProgress,
-        })
-        .then((r) => r.data),
-    onProgress
-  )
+/**
+ * Sends a file to be transcribed. The server answers as soon as it has the file and
+ * transcribes in the background, so the app can show the entry straight away (see
+ * getTranscriptStatus). On iOS the upload carries on if the app goes to the background.
+ */
+export const uploadForTranscription = async (audio: PickedAudio, onProgress?: (pct: number) => void) => {
+  // An authenticated call first, so an expired access token is refreshed before the upload.
+  await getCurrentUser()
+  const task = new File(audio.uri).createUploadTask(`${API_URL}/transcribe`, {
+    uploadType: UploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType: audio.mimeType,
+    headers: { Authorization: `Bearer ${getAccessToken()}` },
+    parameters: { quality: 'high', background: 'true' },
+    sessionType: 'background',
+    onProgress: ({ bytesSent, totalBytes }) => totalBytes > 0 && onProgress?.(Math.min(100, Math.round((bytesSent * 100) / totalBytes))),
+  })
+  const res = await task.uploadAsync()
+  let body: { database_id?: number; error?: string; detail?: unknown } = {}
+  try {
+    body = JSON.parse(res.body)
+  } catch {
+    // not JSON: handled below
+  }
+  if (res.status < 200 || res.status >= 300 || typeof body.database_id !== 'number') {
+    throw new Error(body.error ?? (typeof body.detail === 'string' ? body.detail : "L'envoi a échoué"))
+  }
+  return { id: body.database_id }
+}
+
+export interface TranscriptStatus {
+  id: number
+  status: TranscriptState
+  error: string | null
+  filename: string
+}
+
+export const getTranscriptStatus = (id: number) => api.get<TranscriptStatus>(`/transcripts/${id}/status`).then((r) => r.data)
 
 export interface GuestResult {
   id: string

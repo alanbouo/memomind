@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import * as api from './api'
+import { clearCache } from './cache'
 import { clearTokens, loadTokens, saveTokens } from './storage'
 import { getAppleIdToken, getGoogleIdToken, SocialProvider } from './social'
 
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await clearTokens()
+    clearCache() // the next person to sign in must not see these transcripts
     setGuestResult(null)
     setStatus('signedOut')
   }, [])

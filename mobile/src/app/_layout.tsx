@@ -22,6 +22,7 @@ function RootNavigator() {
       <Stack.Protected guard={status === 'signedIn'}>
         <Stack.Screen name="(app)" options={{ headerShown: false }} />
         <Stack.Screen name="transcript/[id]" options={{ title: 'Transcription' }} />
+        <Stack.Screen name="recordings" options={{ title: 'Enregistrements locaux' }} />
       </Stack.Protected>
       <Stack.Protected guard={status === 'signedOut'}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
