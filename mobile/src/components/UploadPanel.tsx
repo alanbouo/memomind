@@ -20,6 +20,7 @@ import { Marker, newMarker } from '../lib/markers'
 import {
   addRecording,
   deleteRecording,
+  fileSize,
   latestDraft,
   markRecordingEnded,
   markRecordingStarted,
@@ -84,9 +85,11 @@ interface Props {
    * Off for guests: nothing is stored.
    */
   persist?: boolean
+  /** Largest file the server accepts for this user; a bigger one is flagged before any upload. */
+  maxBytes?: number
 }
 
-export function UploadPanel({ onSubmit, persist = false }: Props) {
+export function UploadPanel({ onSubmit, persist = false, maxBytes }: Props) {
   const t = useTheme()
   const options = persist ? KEPT : TEMPORARY
   const recorder = useAudioRecorder(options[options.length - 1])
@@ -257,6 +260,7 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
   // dB (about -50 silence … 0 loud) to 0..1; the exponent makes quiet speech visible
   const level = state.metering === undefined ? 0 : Math.pow(Math.max(0, Math.min(1, (state.metering + 50) / 50)), 1.6)
   const recording = session === 'recording'
+  const tooBigBy = audio && maxBytes ? fileSize(audio.uri) - maxBytes : 0
 
   return (
     <View style={{ flex: 1, justifyContent: 'center', gap: 24 }}>
@@ -329,6 +333,12 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
         </Card>
       )}
 
+      {audio && !active && tooBigBy > 0 && (
+        <ErrorText>
+          {`Ce fichier fait ${(fileSize(audio.uri) / 1e6).toFixed(1)} Mo : le mode invité accepte ${Math.round((maxBytes ?? 0) / 1048576)} Mo au maximum. Créez un compte pour envoyer jusqu'à 100 Mo, ou choisissez un fichier plus court.`}
+        </ErrorText>
+      )}
+
       <ErrorText>{error}</ErrorText>
 
       {busy ? (
@@ -349,7 +359,7 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
         !active && (
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <Button title="Supprimer" variant="secondary" onPress={discardAudio} style={{ flex: 1 }} />
-            <Button title="Transcrire" onPress={submit} style={{ flex: 2 }} />
+            <Button title="Transcrire" onPress={submit} disabled={tooBigBy > 0} style={{ flex: 2 }} />
           </View>
         )
       )}

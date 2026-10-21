@@ -9,6 +9,9 @@ import { errorMessage, sendChatMessageGuest, transcribeAudioGuest } from '../lib
 import { useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 
+// Same limit as the server's /transcribe/guest.
+const GUEST_MAX_BYTES = 5 * 1024 * 1024
+
 export default function Guest() {
   const t = useTheme()
   const { guestResult, setGuestResult, leaveGuest } = useAuth()
@@ -18,8 +21,9 @@ export default function Guest() {
   if (!guestResult) {
     return (
       <Screen>
-        <Muted style={{ marginBottom: 16 }}>Mode invité : la transcription n&apos;est pas sauvegardée. Créez un compte pour conserver votre historique.</Muted>
+        <Muted style={{ marginBottom: 16 }}>Mode invité : la transcription n&apos;est pas sauvegardée et le fichier est limité à 5 Mo. Créez un compte pour conserver votre historique et envoyer jusqu&apos;à 100 Mo.</Muted>
         <UploadPanel
+          maxBytes={GUEST_MAX_BYTES}
           onSubmit={async (audio, onProgress) => {
             if (!(await ensure())) throw new Error(CONSENT_DECLINED)
             try {
