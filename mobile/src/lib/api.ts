@@ -97,6 +97,9 @@ export interface Utterance {
   text: string
   timestamp: string
   start_formatted: string
+  /** Position in the audio, in milliseconds. */
+  start?: number
+  end?: number
 }
 
 export interface ChatMessage {

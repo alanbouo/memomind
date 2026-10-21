@@ -1,7 +1,10 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router'
 import * as Clipboard from 'expo-clipboard'
-import { useCallback, useEffect, useState } from 'react'
-import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, Share, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, Share, Text, TextInput, View } from 'react-native'
+import { PlayerControls } from '../../components/AudioPreview'
 import { ChatPanel } from '../../components/ChatPanel'
 import { PromptModal } from '../../components/PromptModal'
 import { UtteranceList } from '../../components/UtteranceList'
@@ -24,6 +27,7 @@ import {
 } from '../../lib/api'
 import { cached, readCached } from '../../lib/cache'
 import { findByTranscript, onTranscriptionsCompleted, releaseRecording } from '../../lib/recordings'
+import { findRanges } from '../../lib/search'
 import { useTheme } from '../../lib/theme'
 
 const autoPrompt = () => getSettings().then((s) => s.default_user_prompt?.trim() || null)
@@ -45,6 +49,53 @@ export default function TranscriptScreen() {
   const [startedAt] = useState(() => Date.now())
   const [now, setNow] = useState(() => Date.now())
 
+  // The audio, when this device still has the recording: listen, and tap a passage to play it.
+  const [recUri, setRecUri] = useState<string | null>(null)
+  const player = useAudioPlayer(recUri ? { uri: recUri } : null)
+  const playerStatus = useAudioPlayerStatus(player)
+
+  // Search in the transcript
+  const [query, setQuery] = useState('')
+  const [matchPos, setMatchPos] = useState(0)
+  const [jump, setJump] = useState<{ index: number; n: number } | null>(null)
+  const matches = useMemo(
+    () => (utterances && query.trim() ? utterances.flatMap((u, i) => (findRanges(u.text, query).length > 0 ? [i] : [])) : []),
+    [utterances, query]
+  )
+
+  const goToMatch = (pos: number, list: number[]) => {
+    if (list.length === 0) return
+    const wrapped = (pos + list.length) % list.length
+    setMatchPos(wrapped)
+    setJump((j) => ({ index: list[wrapped], n: (j?.n ?? 0) + 1 }))
+  }
+
+  const onQueryChange = (value: string) => {
+    setQuery(value)
+    const next = utterances && value.trim() ? utterances.flatMap((u, i) => (findRanges(u.text, value).length > 0 ? [i] : [])) : []
+    setMatchPos(0)
+    if (next.length > 0) setJump((j) => ({ index: next[0], n: (j?.n ?? 0) + 1 }))
+  }
+
+  const playFrom = async (u: Utterance) => {
+    if (!recUri || u.start === undefined) return
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true })
+    await player.seekTo(u.start / 1000)
+    player.play()
+  }
+
+  // The utterance under the playhead (last one that started), while there is audio to follow.
+  const activeIndex = useMemo(() => {
+    if (!recUri || !utterances) return undefined
+    const ms = playerStatus.currentTime * 1000
+    if (!playerStatus.playing && ms < 1) return undefined
+    let found = -1
+    utterances.forEach((u, i) => {
+      if (u.start !== undefined && u.start <= ms) found = i
+    })
+    return found >= 0 ? found : undefined
+  }, [recUri, utterances, playerStatus.currentTime, playerStatus.playing])
+
   const loadUtterances = useCallback(async () => {
     try {
       const { data, stale } = await cached(`utterances-${id}`, () => getUtterances(id))
@@ -65,6 +116,7 @@ export default function TranscriptScreen() {
         const s = await getTranscriptStatus(id)
         if (!alive) return
         setStatus(s)
+        setRecUri(findByTranscript(id)?.uri ?? null)
         setFilename(s.filename)
         setOffline(false)
         if (s.status === 'processing') timer = setTimeout(tick, 4000)
@@ -75,6 +127,7 @@ export default function TranscriptScreen() {
       } catch {
         if (!alive) return
         // No network: show the last copy of this transcript if there is one.
+        setRecUri(findByTranscript(id)?.uri ?? null)
         setFilename(readCached<TranscriptSummary[]>('list')?.find((x) => x.id === id)?.filename ?? 'Transcription')
         await loadUtterances()
         if (alive) timer = setTimeout(tick, 10000)
@@ -186,7 +239,48 @@ export default function TranscriptScreen() {
             <ErrorText>{error}</ErrorText>
           </View>
         ) : utterances ? (
-          <UtteranceList utterances={utterances} showTimestamps={timestamps} onSpeakerPress={setSpeaker} />
+          <View style={{ flex: 1 }}>
+            {recUri && (
+              <View style={{ marginHorizontal: 16, marginTop: 12 }}>
+                <Card style={{ padding: 12 }}>
+                  <PlayerControls player={player} status={playerStatus} />
+                </Card>
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 12 }}>
+              <TextInput
+                value={query}
+                onChangeText={onQueryChange}
+                placeholder="Rechercher dans la transcription…"
+                placeholderTextColor={t.muted}
+                clearButtonMode="while-editing"
+                returnKeyType="search"
+                onSubmitEditing={() => goToMatch(matchPos + 1, matches)}
+                style={{ flex: 1, minHeight: 42, borderRadius: 12, borderWidth: 1, borderColor: t.border, backgroundColor: t.card, color: t.text, paddingHorizontal: 14, fontSize: 15 }}
+              />
+              {query.trim() !== '' && (
+                <>
+                  <Muted style={{ minWidth: 44, textAlign: 'center' }}>{matches.length === 0 ? '0' : `${matchPos + 1}/${matches.length}`}</Muted>
+                  <Pressable accessibilityLabel="Résultat précédent" hitSlop={8} onPress={() => goToMatch(matchPos - 1, matches)} disabled={matches.length === 0}>
+                    <Ionicons name="chevron-up" size={24} color={matches.length ? t.primary : t.muted} />
+                  </Pressable>
+                  <Pressable accessibilityLabel="Résultat suivant" hitSlop={8} onPress={() => goToMatch(matchPos + 1, matches)} disabled={matches.length === 0}>
+                    <Ionicons name="chevron-down" size={24} color={matches.length ? t.primary : t.muted} />
+                  </Pressable>
+                </>
+              )}
+            </View>
+            <UtteranceList
+              utterances={utterances}
+              showTimestamps={timestamps}
+              onSpeakerPress={setSpeaker}
+              onUtterancePress={recUri ? playFrom : undefined}
+              activeIndex={activeIndex}
+              query={query}
+              focus={jump}
+              follow={playerStatus.playing && !query.trim() ? activeIndex : undefined}
+            />
+          </View>
         ) : (
           <ActivityIndicator style={{ marginTop: 40 }} color={t.primary} />
         )

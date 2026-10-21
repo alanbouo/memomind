@@ -1,4 +1,4 @@
-import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
+import { AudioPlayer, AudioStatus, setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
 import { useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useTheme } from '../lib/theme'
@@ -11,9 +11,14 @@ const fmt = (s: number) => {
 
 /** Play/pause + tap-to-seek preview of a local audio file. */
 export function AudioPreview({ uri, name }: { uri: string; name: string }) {
-  const t = useTheme()
   const player = useAudioPlayer({ uri })
   const status = useAudioPlayerStatus(player)
+  return <PlayerControls player={player} status={status} label={name} />
+}
+
+/** The controls themselves, for callers that own the player (e.g. the transcript screen). */
+export function PlayerControls({ player, status, label }: { player: AudioPlayer; status: AudioStatus; label?: string }) {
+  const t = useTheme()
   const [width, setWidth] = useState(0)
 
   const toggle = async () => {
@@ -30,9 +35,11 @@ export function AudioPreview({ uri, name }: { uri: string; name: string }) {
 
   return (
     <View style={{ gap: 10 }}>
-      <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>
-        {name}
-      </Text>
+      {label !== undefined && (
+        <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>
+          {label}
+        </Text>
+      )}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <Pressable
           accessibilityRole="button"

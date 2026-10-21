@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons'
 import {
+  AudioQuality,
   IOSOutputFormat,
   RecordingOptions,
   RecordingPresets,
@@ -26,24 +27,38 @@ import {
 } from '../lib/recordings'
 import { useTheme } from '../lib/theme'
 import { AudioPreview } from './AudioPreview'
+import { Waveform } from './Waveform'
 import { Button, Card, ErrorText, Muted } from './ui'
 
-// Speech only: mono 16 kHz is what the server converts to anyway, so this halves the upload.
+// Speech only: mono is all the server needs, so recording at a low rate halves the upload.
 // The containers are chosen to survive a crash: CAF (iOS) and ADTS (Android) can be read
 // even when the app dies mid-recording, unlike .m4a whose index is written at the very end.
-const speech = (directory: 'cache' | 'document'): RecordingOptions => ({
+// AVAudioRecorder rejects bit rates that don't suit the sample rate, so settings are tried
+// from the leanest down to Expo's own preset, which every device accepts.
+type Directory = 'cache' | 'document'
+
+const speech = (directory: Directory, sampleRate: number, bitRate: number): RecordingOptions => ({
   ...RecordingPresets.HIGH_QUALITY,
   directory,
   isMeteringEnabled: true,
-  sampleRate: 16000,
+  sampleRate,
   numberOfChannels: 1,
-  bitRate: 64000,
+  bitRate,
   ...(Platform.OS === 'ios'
-    ? { extension: '.caf', ios: { ...RecordingPresets.HIGH_QUALITY.ios, outputFormat: IOSOutputFormat.MPEG4AAC } }
+    ? { extension: '.caf', ios: { ...RecordingPresets.HIGH_QUALITY.ios, outputFormat: IOSOutputFormat.MPEG4AAC, audioQuality: AudioQuality.HIGH } }
     : { extension: '.aac', android: { outputFormat: 'aac_adts' as const, audioEncoder: 'aac' as const } }),
 })
-const KEPT = speech('document') // survives OS cache cleaning
-const TEMPORARY = speech('cache')
+
+const fallback = (directory: Directory): RecordingOptions => ({ ...RecordingPresets.HIGH_QUALITY, directory, isMeteringEnabled: true })
+
+const candidates = (directory: Directory): RecordingOptions[] => [
+  speech(directory, 16000, 32000),
+  speech(directory, 22050, 48000),
+  speech(directory, 44100, 64000),
+  fallback(directory),
+]
+const KEPT = candidates('document') // survives OS cache cleaning
+const TEMPORARY = candidates('cache')
 
 const fmt = (ms: number) => {
   const s = Math.floor(ms / 1000)
@@ -70,13 +85,15 @@ interface Props {
 
 export function UploadPanel({ onSubmit, persist = false }: Props) {
   const t = useTheme()
-  const recorder = useAudioRecorder(persist ? KEPT : TEMPORARY)
-  const state = useAudioRecorderState(recorder, 250)
+  const options = persist ? KEPT : TEMPORARY
+  const recorder = useAudioRecorder(options[options.length - 1])
+  const state = useAudioRecorderState(recorder, 100)
   const [session, setSession] = useState<Session>('idle')
   const [audio, setAudio] = useState<PickedAudio | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const [takes, setTakes] = useState(0) // bumped per recording so the audiogram starts empty
 
   const busy = progress !== null
   const active = session !== 'idle'
@@ -126,9 +143,21 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
     }
     try {
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true, allowsBackgroundRecording: true, interruptionMode: 'doNotMix' })
-      await recorder.prepareToRecordAsync()
+      let prepared = false
+      let failure: unknown
+      for (const candidate of options) {
+        try {
+          await recorder.prepareToRecordAsync(candidate)
+          prepared = true
+          break
+        } catch (e) {
+          failure = e
+        }
+      }
+      if (!prepared) throw failure
       recorder.record()
       setSession('recording')
+      setTakes((n) => n + 1)
       setAudio(null)
       if (persist && recorder.uri) markRecordingStarted(recorder.uri, `enregistrement-${localStamp()}`)
     } catch (e) {
@@ -211,8 +240,8 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
     }
   }
 
-  // dB (about -60 silence … 0 loud) to 0..1
-  const level = state.metering === undefined ? 0 : Math.max(0, Math.min(1, (state.metering + 60) / 60))
+  // dB (about -50 silence … 0 loud) to 0..1; the exponent makes quiet speech visible
+  const level = state.metering === undefined ? 0 : Math.pow(Math.max(0, Math.min(1, (state.metering + 50) / 50)), 1.6)
   const recording = session === 'recording'
 
   return (
@@ -234,9 +263,7 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
 
         {active ? (
           <>
-            <View style={[styles.meterTrack, { backgroundColor: t.border }]}>
-              <View style={[styles.meterBar, { backgroundColor: recording ? t.primary : t.muted, width: `${(recording ? level : 0) * 100}%` }]} />
-            </View>
+            <Waveform level={level} active={recording} resetKey={takes} />
             <Muted>{recording ? "Enregistrement en cours… vous pouvez quitter l'app" : 'En pause'}</Muted>
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
               <Pressable accessibilityRole="button" onPress={togglePause} style={[styles.pill, { borderColor: t.border, backgroundColor: t.card }]}>
@@ -318,8 +345,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingHorizontal: 18, borderRadius: 22, borderWidth: 1 },
-  meterTrack: { width: 200, height: 6, borderRadius: 3, overflow: 'hidden' },
-  meterBar: { height: 6, borderRadius: 3 },
   track: { height: 8, borderRadius: 4, overflow: 'hidden' },
   bar: { height: 8, borderRadius: 4 },
 })

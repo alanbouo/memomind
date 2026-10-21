@@ -1,7 +1,6 @@
-import * as Sharing from 'expo-sharing'
 import { useCallback, useEffect, useState } from 'react'
 import { router, useFocusEffect } from 'expo-router'
-import { Alert, Pressable, Switch, Text, View } from 'react-native'
+import { Alert, Platform, Pressable, Share, Switch, Text, View } from 'react-native'
 import { Button, Card, ErrorText, Field, Heading, Muted, Screen } from '../../components/ui'
 import {
   deleteAccount,
@@ -93,7 +92,21 @@ export default function Preferences() {
     setExporting(true)
     try {
       const uri = await downloadAccountExport()
-      await Sharing.shareAsync(uri, { mimeType: 'application/zip', UTI: 'public.zip-archive', dialogTitle: 'Exporter mes données' })
+      // Loaded on demand: the native module is missing from Expo Go and would crash the screen.
+      let sharing: typeof import('expo-sharing') | null = null
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        sharing = require('expo-sharing')
+      } catch {
+        // falls back below
+      }
+      if (sharing) {
+        await sharing.shareAsync(uri, { mimeType: 'application/zip', UTI: 'public.zip-archive', dialogTitle: 'Exporter mes données' })
+      } else if (Platform.OS === 'ios') {
+        await Share.share({ url: uri })
+      } else {
+        Alert.alert('Export indisponible', 'Utilisez le development build de MemoMind pour exporter vos données.')
+      }
     } catch (e) {
       Alert.alert('Erreur', errorMessage(e, e instanceof Error ? e.message : "L'export a échoué"))
     } finally {
