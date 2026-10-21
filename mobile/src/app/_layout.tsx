@@ -2,6 +2,7 @@ import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { ActivityIndicator, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { AiConsentProvider } from '../components/AiConsent'
 import { AuthProvider, useAuth } from '../lib/auth'
 import { useTheme } from '../lib/theme'
 
@@ -39,7 +40,9 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <StatusBar style="auto" />
-        <RootNavigator />
+        <AiConsentProvider>
+          <RootNavigator />
+        </AiConsentProvider>
       </AuthProvider>
     </SafeAreaProvider>
   )

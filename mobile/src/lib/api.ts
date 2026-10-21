@@ -71,6 +71,8 @@ export const errorMessage = (e: unknown, fallback = 'Une erreur est survenue'): 
     if (Array.isArray(data?.detail)) return (data.detail[0] as { msg?: string })?.msg ?? fallback
     if (data?.error) return data.error
     if (!e.response) return 'Impossible de joindre le serveur'
+  } else if (e instanceof Error && e.message) {
+    return e.message
   }
   return fallback
 }
@@ -82,6 +84,8 @@ export interface TranscriptSummary {
   id: number
   status: TranscriptState
   error: string | null
+  tags: string[]
+  pinned: boolean
   transcript_id: string
   filename: string
   created_at: string
@@ -226,6 +230,8 @@ export interface TranscriptStatus {
   status: TranscriptState
   error: string | null
   filename: string
+  tags: string[]
+  pinned: boolean
 }
 
 export const getTranscriptStatus = (id: number) => api.get<TranscriptStatus>(`/transcripts/${id}/status`).then((r) => r.data)
@@ -260,6 +266,16 @@ export const getUtterances = (id: number) =>
   api
     .get<{ utterances: Utterance[]; speakers: Record<string, string> }>(`/transcripts/${id}/utterances`)
     .then((r) => r.data)
+
+export const updateTranscript = (id: number, patch: { filename?: string; pinned?: boolean }) => api.patch(`/transcripts/${id}`, patch)
+
+export const setTranscriptTags = (id: number, tags: string[]) =>
+  api.put<{ tags: string[] }>(`/transcripts/${id}/tags`, { tags }).then((r) => r.data.tags)
+
+/** Every tag the user has used, most used first: suggestions while tagging. */
+export const listTags = () => api.get<{ tag: string; count: number }[]>('/tags').then((r) => r.data)
+
+export const deleteTranscripts = (ids: number[]) => api.post<{ deleted: number }>('/transcripts/delete', { ids }).then((r) => r.data)
 
 export const renameTranscript = (id: number, filename: string) =>
   api.patch(`/transcripts/${id}`, { filename }).then((r) => r.data)

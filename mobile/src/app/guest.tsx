@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Pressable, Share, Text, View } from 'react-native'
+import { CONSENT_DECLINED, useAiConsent } from '../components/AiConsent'
 import { ChatPanel } from '../components/ChatPanel'
 import { Button, Muted, Screen } from '../components/ui'
 import { UploadPanel } from '../components/UploadPanel'
@@ -11,6 +12,7 @@ import { useTheme } from '../lib/theme'
 export default function Guest() {
   const t = useTheme()
   const { guestResult, setGuestResult, signOut } = useAuth()
+  const { ensure } = useAiConsent()
   const [tab, setTab] = useState<'text' | 'chat'>('text')
 
   if (!guestResult) {
@@ -19,6 +21,7 @@ export default function Guest() {
         <Muted style={{ marginBottom: 16 }}>Mode invité : la transcription n&apos;est pas sauvegardée. Créez un compte pour conserver votre historique.</Muted>
         <UploadPanel
           onSubmit={async (audio, onProgress) => {
+            if (!(await ensure())) throw new Error(CONSENT_DECLINED)
             try {
               setGuestResult(await transcribeAudioGuest(audio, onProgress))
             } catch (e) {
@@ -43,7 +46,12 @@ export default function Guest() {
       {tab === 'text' ? (
         <UtteranceList utterances={guestResult.utterances} showTimestamps />
       ) : (
-        <ChatPanel send={async (m) => (await sendChatMessageGuest(m, guestResult.text)).response} />
+        <ChatPanel
+          send={async (m) => {
+            if (!(await ensure())) throw new Error(CONSENT_DECLINED)
+            return (await sendChatMessageGuest(m, guestResult.text)).response
+          }}
+        />
       )}
       <View style={{ flexDirection: 'row', gap: 10, padding: 12 }}>
         <Button title="Partager" variant="secondary" style={{ flex: 1 }} onPress={() => Share.share({ message: guestResult.text })} />

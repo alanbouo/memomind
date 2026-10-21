@@ -1,5 +1,6 @@
 import { File } from 'expo-file-system'
 import { readJson, writeJson } from './localStore'
+import { getLocalPrefs } from './prefs'
 
 /**
  * Voice recordings kept on the device (never uploaded unless the user taps "Transcrire").
@@ -28,7 +29,6 @@ interface Index {
 }
 
 const INDEX = 'recordings.json'
-const PREFS = 'prefs.json'
 
 const load = (): Index => readJson<Index>(INDEX, { recordings: [] })
 const save = (index: Index) => writeJson(INDEX, index)
@@ -57,14 +57,6 @@ export const removeFile = (uri: string) => {
     // already gone
   }
 }
-
-// ---------- Preference ----------
-export interface LocalPrefs {
-  /** Keep audio on the device after it was transcribed (default). Otherwise it is deleted. */
-  keepRecordings: boolean
-}
-export const getLocalPrefs = (): LocalPrefs => ({ keepRecordings: true, ...readJson<Partial<LocalPrefs>>(PREFS, {}) })
-export const setKeepRecordings = (keepRecordings: boolean) => writeJson(PREFS, { ...getLocalPrefs(), keepRecordings })
 
 // ---------- Library ----------
 /** Newest first; entries whose file vanished are dropped. */

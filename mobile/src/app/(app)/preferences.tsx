@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { router, useFocusEffect } from 'expo-router'
-import { Alert, Platform, Pressable, Share, Switch, Text, View } from 'react-native'
+import { Alert, Linking, Platform, Pressable, Share, Switch, Text, View } from 'react-native'
 import { Button, Card, ErrorText, Field, Heading, Muted, Screen } from '../../components/ui'
 import {
   deleteAccount,
@@ -11,7 +11,8 @@ import {
   updateSettings,
 } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
-import { getLocalPrefs, listRecordings, setKeepRecordings, totalSize } from '../../lib/recordings'
+import { getLocalPrefs, revokeAiConsent, setKeepRecordings } from '../../lib/prefs'
+import { listRecordings, totalSize } from '../../lib/recordings'
 import { useTheme } from '../../lib/theme'
 
 // Empty code = let AssemblyAI detect the language.
@@ -47,6 +48,7 @@ export default function Preferences() {
   const [promptsMsg, setPromptsMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [exporting, setExporting] = useState(false)
   const [keep, setKeep] = useState(() => getLocalPrefs().keepRecordings)
+  const [consentAt, setConsentAt] = useState(() => getLocalPrefs().aiConsentAt)
   const [local, setLocal] = useState({ count: 0, bytes: 0 })
 
   useFocusEffect(
@@ -181,6 +183,27 @@ export default function Preferences() {
           onPress={() => router.push('/recordings')}
           style={{ marginTop: 14 }}
         />
+      </Card>
+
+      <SectionTitle>Confidentialité</SectionTitle>
+      <Card style={{ marginBottom: 20 }}>
+        <Text style={{ color: t.text, fontWeight: '700', marginBottom: 4 }}>Services d&apos;IA</Text>
+        <Muted style={{ marginBottom: 12 }}>
+          {consentAt
+            ? "Vous avez accepté que l'audio soit transcrit par AssemblyAI et que le texte et vos messages soient traités par OpenAI (chat)."
+            : "Vous n'avez pas encore donné votre accord. Il vous sera demandé avant la première transcription."}
+        </Muted>
+        {consentAt && (
+          <Button
+            title="Retirer mon accord"
+            variant="secondary"
+            onPress={() => {
+              revokeAiConsent()
+              setConsentAt(undefined)
+            }}
+          />
+        )}
+        <Button title="Politique de confidentialité" variant="ghost" onPress={() => Linking.openURL('https://memomind.space/privacy')} style={{ marginTop: 4 }} />
       </Card>
 
       <SectionTitle>Prompts</SectionTitle>

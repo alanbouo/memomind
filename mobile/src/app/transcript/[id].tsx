@@ -4,8 +4,10 @@ import { Ionicons } from '@expo/vector-icons'
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, Share, Text, TextInput, View } from 'react-native'
+import { CONSENT_DECLINED, useAiConsent } from '../../components/AiConsent'
 import { PlayerControls } from '../../components/AudioPreview'
 import { ChatPanel } from '../../components/ChatPanel'
+import { TagEditor } from '../../components/Tags'
 import { PromptModal } from '../../components/PromptModal'
 import { UtteranceList } from '../../components/UtteranceList'
 import { Button, Card, ErrorText, Muted } from '../../components/ui'
@@ -19,6 +21,7 @@ import {
   getTranscriptText,
   getUtterances,
   renameTranscript,
+  updateTranscript,
   sendChatMessage,
   updateSpeakerMapping,
   TranscriptStatus,
@@ -30,10 +33,9 @@ import { findByTranscript, onTranscriptionsCompleted, releaseRecording } from '.
 import { findRanges } from '../../lib/search'
 import { useTheme } from '../../lib/theme'
 
-const autoPrompt = () => getSettings().then((s) => s.default_user_prompt?.trim() || null)
-
 export default function TranscriptScreen() {
   const t = useTheme()
+  const { ensure } = useAiConsent()
   const { id: rawId } = useLocalSearchParams<{ id: string }>()
   const id = Number(rawId)
   const [tab, setTab] = useState<'text' | 'chat'>('text')
@@ -46,6 +48,8 @@ export default function TranscriptScreen() {
 
   const [status, setStatus] = useState<TranscriptStatus | null>(null)
   const [offline, setOffline] = useState(false)
+  const [tags, setTags] = useState<string[]>([])
+  const [pinned, setPinned] = useState(false)
   const [startedAt] = useState(() => Date.now())
   const [now, setNow] = useState(() => Date.now())
 
@@ -116,6 +120,8 @@ export default function TranscriptScreen() {
         const s = await getTranscriptStatus(id)
         if (!alive) return
         setStatus(s)
+        setTags(s.tags ?? []) // an API without tags yet omits the field
+        setPinned(Boolean(s.pinned))
         setRecUri(findByTranscript(id)?.uri ?? null)
         setFilename(s.filename)
         setOffline(false)
@@ -177,6 +183,7 @@ export default function TranscriptScreen() {
       [timestamps ? 'Masquer les horodatages' : 'Afficher les horodatages', () => setTimestamps((v) => !v)],
       ['Partager le texte', () => withText((text) => Share.share({ message: text, title: filename }))],
       ['Copier le texte', () => withText((text) => Clipboard.setStringAsync(text))],
+      [pinned ? 'Désépingler' : 'Épingler en haut', togglePin],
       ['Renommer', () => setRenameFile(true)],
       ['Supprimer', confirmDelete],
     ]
@@ -189,6 +196,18 @@ export default function TranscriptScreen() {
       Alert.alert(filename, undefined, [...actions.map(([text, onPress]) => ({ text, onPress })).slice(0, 3), { text: 'Plus…', onPress: () => Alert.alert(filename, undefined, [...actions.slice(3).map(([text, onPress]) => ({ text, onPress })), { text: 'Annuler', style: 'cancel' as const }]) }])
     }
   }
+
+  const togglePin = async () => {
+    try {
+      await updateTranscript(id, { pinned: !pinned })
+      setPinned(!pinned)
+    } catch (e) {
+      Alert.alert('Erreur', errorMessage(e))
+    }
+  }
+
+  // The saved default prompt runs by itself on a new chat, so it needs the consent first.
+  const autoPrompt = useCallback(async () => ((await ensure()) ? ((await getSettings()).default_user_prompt?.trim() || null) : null), [ensure])
 
   const loadHistory = useCallback(() => getChatHistory(id), [id])
 
@@ -213,6 +232,12 @@ export default function TranscriptScreen() {
       </View>
 
       {offline && <Muted style={{ textAlign: 'center', marginTop: 8 }}>Hors ligne : dernière version enregistrée</Muted>}
+
+      {status?.tags !== undefined && (
+        <View style={{ marginHorizontal: 16, marginTop: 12 }}>
+          <TagEditor transcriptId={id} tags={tags} onChange={setTags} />
+        </View>
+      )}
 
       {status?.status === 'processing' ? (
         <View style={{ padding: 16 }}>
@@ -288,7 +313,10 @@ export default function TranscriptScreen() {
         <ChatPanel
           loadHistory={loadHistory}
           autoPrompt={autoPrompt}
-          send={async (m) => (await sendChatMessage(id, m)).content}
+          send={async (m) => {
+            if (!(await ensure())) throw new Error(CONSENT_DECLINED)
+            return (await sendChatMessage(id, m)).content
+          }}
           onClear={async () => {
             await clearChatHistory(id)
           }}
