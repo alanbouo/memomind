@@ -218,7 +218,7 @@ export default function History() {
                 </Text>
               ) : (
                 <Text style={{ color: t.text, marginTop: 8, lineHeight: 20 }} numberOfLines={3}>
-                  {(q && excerpt(item.content, q)) || item.preview}
+                  {(q && excerpt(item.content, q)) || item.summary || item.preview}
                 </Text>
               )}
             </Card>

@@ -44,6 +44,7 @@ export default function Preferences() {
   const [language, setLanguage] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [userPrompt, setUserPrompt] = useState('')
+  const [autoSummary, setAutoSummary] = useState(true)
   const [promptsSaved, setPromptsSaved] = useState(true)
   const [promptsMsg, setPromptsMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [exporting, setExporting] = useState(false)
@@ -64,6 +65,7 @@ export default function Preferences() {
         setLanguage(s.default_language ?? '')
         setSystemPrompt(s.system_prompt_template ?? '')
         setUserPrompt(s.default_user_prompt ?? '')
+        setAutoSummary(s.auto_summary !== false)
       })
       .catch(() => {})
   }, [])
@@ -157,6 +159,26 @@ export default function Preferences() {
         </View>
       </Card>
 
+      <Card style={{ marginBottom: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontWeight: '700', marginBottom: 4 }}>Titre et résumé automatiques</Text>
+            <Muted>Après chaque transcription, l&apos;IA donne un titre à l&apos;entrée et en écrit un court résumé.</Muted>
+          </View>
+          <Switch
+            value={autoSummary}
+            onValueChange={(v) => {
+              setAutoSummary(v)
+              updateSettings({ auto_summary: v }).catch((e) => {
+                setAutoSummary(!v)
+                Alert.alert('Erreur', errorMessage(e))
+              })
+            }}
+            trackColor={{ true: t.primary }}
+          />
+        </View>
+      </Card>
+
       <SectionTitle>Enregistrements</SectionTitle>
       <Card style={{ marginBottom: 20 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -190,7 +212,7 @@ export default function Preferences() {
         <Text style={{ color: t.text, fontWeight: '700', marginBottom: 4 }}>Services d&apos;IA</Text>
         <Muted style={{ marginBottom: 12 }}>
           {consentAt
-            ? "Vous avez accepté que l'audio soit transcrit par AssemblyAI et que le texte et vos messages soient traités par Anthropic (chat)."
+            ? "Vous avez accepté que l'audio soit transcrit par AssemblyAI et que le texte et vos messages soient traités par Anthropic (titre, résumé et chat)."
             : "Vous n'avez pas encore donné votre accord. Il vous sera demandé avant la première transcription."}
         </Muted>
         {consentAt && (

@@ -76,6 +76,7 @@ class Transcript(Base):
     status = Column(String, default="completed", nullable=False)
     error = Column(Text, nullable=True)
     pinned = Column(Integer, default=0, nullable=False)  # 1 = pinned to the top of the history
+    summary = Column(Text, nullable=True)  # short AI summary, written when the transcription completes
     
     # Relationships
     user = relationship("User", back_populates="transcripts")
@@ -168,6 +169,7 @@ class UserSettings(Base):
     # Transcription settings
     default_quality = Column(String, default="medium")  # low/medium/high
     default_language = Column(String, nullable=True)  # null = auto-detect
+    auto_summary = Column(Integer, default=1, nullable=False)  # 1 = title and summary after each transcription
     
     # Display settings
     theme = Column(String, default="system")  # light/dark/system
@@ -184,6 +186,8 @@ _ADDED_COLUMNS = [
     ("transcripts", "status", "VARCHAR NOT NULL DEFAULT 'completed'"),
     ("transcripts", "error", "TEXT"),
     ("transcripts", "pinned", "INTEGER NOT NULL DEFAULT 0"),
+    ("transcripts", "summary", "TEXT"),
+    ("user_settings", "auto_summary", "INTEGER NOT NULL DEFAULT 1"),
 ]
 
 

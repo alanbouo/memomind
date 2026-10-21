@@ -42,6 +42,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
         // Transcription
         default_quality: 'medium',
         default_language: '',
+        auto_summary: true,
         // Display
         theme: 'system',
         date_format: 'us',
@@ -70,6 +71,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                 response_length: response.data.response_length || 'medium',
                 default_quality: response.data.default_quality || 'medium',
                 default_language: response.data.default_language || '',
+                auto_summary: response.data.auto_summary !== false,
                 theme: response.data.theme || 'system',
                 date_format: response.data.date_format || 'us',
                 font_size: response.data.font_size || 'medium',
@@ -239,6 +241,19 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                         </select>
                                         <p className={descClass}>Force a specific language or let the AI auto-detect</p>
                                     </div>
+
+                                    <label className="flex items-start gap-3 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.auto_summary}
+                                            onChange={(e) => updateSetting('auto_summary', e.target.checked)}
+                                            className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                        />
+                                        <span>
+                                            <span className={labelClass}>Automatic title and summary</span>
+                                            <span className={descClass}>After each transcription, the AI names the entry and writes a short summary.</span>
+                                        </span>
+                                    </label>
                                 </div>
                             )}
 

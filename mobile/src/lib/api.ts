@@ -93,6 +93,8 @@ export interface TranscriptSummary {
   preview: string
   content: string
   speakers: string[]
+  /** Short AI summary, when one was written. */
+  summary?: string | null
 }
 
 export interface Utterance {
@@ -232,6 +234,7 @@ export interface TranscriptStatus {
   filename: string
   tags: string[]
   pinned: boolean
+  summary?: string | null
 }
 
 export const getTranscriptStatus = (id: number) => api.get<TranscriptStatus>(`/transcripts/${id}/status`).then((r) => r.data)
@@ -262,9 +265,12 @@ export const getTranscriptText = (id: number | string, timestamps = false) =>
     .get<string>(`/transcripts/${id}`, { params: { format: 'txt', timestamps }, transformResponse: (d) => d })
     .then((r) => r.data)
 
+export const generateSummary = (id: number) =>
+  api.post<{ summary: string }>(`/transcripts/${id}/summary`, undefined, { timeout: 60000 }).then((r) => r.data.summary)
+
 export const getUtterances = (id: number) =>
   api
-    .get<{ utterances: Utterance[]; speakers: Record<string, string> }>(`/transcripts/${id}/utterances`)
+    .get<{ utterances: Utterance[]; speakers: Record<string, string>; summary?: string | null }>(`/transcripts/${id}/utterances`)
     .then((r) => r.data)
 
 export const updateTranscript = (id: number, patch: { filename?: string; pinned?: boolean }) => api.patch(`/transcripts/${id}`, patch)

@@ -364,9 +364,9 @@ function TranscriptViewer({ transcripts, onTranscriptDeleted, onTranscriptRename
             })()}
 
             {/* Preview on hover (no active search) */}
-            {!searchQuery.trim() && hoveredTranscript === transcript.id && transcript.preview && (
+            {!searchQuery.trim() && hoveredTranscript === transcript.id && (transcript.summary || transcript.preview) && (
               <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                {transcript.preview}
+                {transcript.summary || transcript.preview}
               </div>
             )}
           </div>
@@ -456,6 +456,12 @@ function TranscriptViewer({ transcripts, onTranscriptDeleted, onTranscriptRename
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {transcriptData.summary && (
+                      <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-800 p-4 rounded-lg">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-primary-700 dark:text-primary-400 mb-1">Summary</p>
+                        <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">{transcriptData.summary}</p>
+                      </div>
+                    )}
                     {(() => {
                       const labels = [...new Set((transcriptData.utterances || []).map(u => u.speaker))]
                       if (labels.length === 0) return null

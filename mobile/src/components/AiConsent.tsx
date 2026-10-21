@@ -56,7 +56,7 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
                 <Text style={{ fontWeight: '700' }}>• AssemblyAI</Text> reçoit votre enregistrement audio pour le transcrire.
               </Text>
               <Text style={{ color: t.text, fontSize: 15, lineHeight: 22, marginBottom: 12 }}>
-                <Text style={{ fontWeight: '700' }}>• Anthropic (Claude)</Text> reçoit le texte de la transcription et vos messages quand vous utilisez le chat IA.
+                <Text style={{ fontWeight: '700' }}>• Anthropic (Claude)</Text> reçoit le texte de la transcription pour en écrire le titre et le résumé, et vos messages quand vous utilisez le chat IA.
               </Text>
               <Muted style={{ marginBottom: 16 }}>
                 Le fichier audio est supprimé du serveur MemoMind dès que la transcription est terminée. Vous pouvez retirer votre accord à tout moment dans Préférences.

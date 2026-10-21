@@ -4,6 +4,7 @@ Chat with a transcript, through the Anthropic API.
 The transcript goes in a cached system block, so follow-up questions on the
 same transcript only pay for the new turn.
 """
+import json
 import os
 from typing import Iterator, List
 
@@ -67,6 +68,36 @@ def _params(system: List[dict], messages: List[dict]) -> dict:
         messages=messages,
         output_config={"effort": "low"},  # chat: latency matters more than depth
     )
+
+
+SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "claude-haiku-5-5")
+
+SUMMARY_SYSTEM = """You write the title and the summary of an audio transcript (a voice memo, meeting, interview or call).
+- Write both in the language of the transcript.
+- title: at most 60 characters, says what it is about, no quotes, no trailing period, no date.
+- summary: 2 to 3 plain sentences (no Markdown, no lists) with the essentials: the subject, the key points or decisions, and who is involved if it matters."""
+
+SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {"title": {"type": "string"}, "summary": {"type": "string"}},
+    "required": ["title", "summary"],
+    "additionalProperties": False,
+}
+
+
+def summarize(transcript_text: str) -> dict:
+    """A short title and summary for a transcript: {"title": ..., "summary": ...}."""
+    response = _client().messages.create(
+        model=SUMMARY_MODEL,
+        max_tokens=1024,
+        system=SUMMARY_SYSTEM,
+        messages=[{"role": "user", "content": f"<transcript>\n{transcript_text}\n</transcript>"}],
+        output_config={"effort": "low", "format": {"type": "json_schema", "schema": SUMMARY_SCHEMA}},
+    )
+    if response.stop_reason == "refusal":
+        raise RuntimeError("summary refused")
+    data = json.loads(next(b.text for b in response.content if b.type == "text"))
+    return {"title": data["title"].strip().strip('"\'').rstrip(".")[:80], "summary": data["summary"].strip()}
 
 
 REFUSAL_TEXT = "Je ne peux pas répondre à cette demande."

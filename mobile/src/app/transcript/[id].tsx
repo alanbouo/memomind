@@ -19,6 +19,7 @@ import {
   getChatHistory,
   getSettings,
   getTranscriptStatus,
+  generateSummary,
   getTranscriptText,
   getUtterances,
   renameTranscript,
@@ -55,6 +56,8 @@ export default function TranscriptScreen() {
   const [offline, setOffline] = useState(false)
   const [tags, setTags] = useState<string[]>([])
   const [pinned, setPinned] = useState(false)
+  const [summary, setSummary] = useState<string | null>(null)
+  const [summarizing, setSummarizing] = useState(false)
   const [startedAt] = useState(() => Date.now())
   const [now, setNow] = useState(() => Date.now())
 
@@ -124,6 +127,7 @@ export default function TranscriptScreen() {
     try {
       const { data, stale } = await cached(`utterances-${id}`, () => getUtterances(id))
       setUtterances(data.utterances)
+      setSummary(data.summary ?? null)
       setOffline(stale)
       setError(null)
     } catch (e) {
@@ -172,6 +176,19 @@ export default function TranscriptScreen() {
     const timer = setInterval(() => setNow(Date.now()), 5000)
     return () => clearInterval(timer)
   }, [status?.status])
+
+  const makeSummary = async () => {
+    setSummarizing(true)
+    try {
+      if (!(await ensure())) throw new Error(CONSENT_DECLINED)
+      setSummary(await generateSummary(id))
+      await loadUtterances() // keep the offline copy in step
+    } catch (e) {
+      Alert.alert('Erreur', errorMessage(e))
+    } finally {
+      setSummarizing(false)
+    }
+  }
 
   const retry = async () => {
     // Free the recording (it becomes a draft again) and drop the failed entry.
@@ -294,6 +311,26 @@ export default function TranscriptScreen() {
           </View>
         ) : utterances ? (
           <View style={{ flex: 1 }}>
+            {summary ? (
+              <View style={{ marginHorizontal: 16, marginTop: 12 }}>
+                <Card style={{ padding: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <Ionicons name="sparkles" size={14} color={t.primary} />
+                    <Text style={{ color: t.primary, fontWeight: '700', fontSize: 13 }}>Résumé</Text>
+                  </View>
+                  <Text selectable style={{ color: t.text, fontSize: 15, lineHeight: 21 }}>
+                    {summary}
+                  </Text>
+                </Card>
+              </View>
+            ) : (
+              !offline && (
+                <Pressable onPress={makeSummary} disabled={summarizing} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 16, marginTop: 12, alignSelf: 'flex-start', opacity: summarizing ? 0.5 : 1 }}>
+                  {summarizing ? <ActivityIndicator size="small" color={t.primary} /> : <Ionicons name="sparkles" size={14} color={t.primary} />}
+                  <Text style={{ color: t.primary, fontWeight: '600' }}>{summarizing ? 'Résumé en cours…' : 'Générer un résumé'}</Text>
+                </Pressable>
+              )
+            )}
             {recUri && (
               <View style={{ marginHorizontal: 16, marginTop: 12 }}>
                 <Card style={{ padding: 12 }}>

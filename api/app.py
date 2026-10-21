@@ -245,6 +245,27 @@ async def get_current_user(
 STALE_PROCESSING = timedelta(minutes=60)
 
 
+MIN_SUMMARY_CHARS = 200  # shorter than this, there is nothing to summarise
+
+
+def _auto_title_and_summary(row: Transcript, original_name: str) -> None:
+    """Give a fresh transcript a title and a summary. Never fails the transcription."""
+    owner = row.user
+    if owner and owner.settings and not owner.settings.auto_summary:
+        return
+    if not os.getenv("ANTHROPIC_API_KEY") or len(row.text_content or "") < MIN_SUMMARY_CHARS:
+        return
+    try:
+        result = llm.summarize(row.text_content)
+    except Exception as e:
+        print(f"[SUMMARY] Skipped: {e}", flush=True)
+        return
+    row.summary = result["summary"]
+    # Leave a name the user chose while the audio was being processed alone.
+    if result["title"] and row.filename == original_name:
+        row.filename = result["title"]
+
+
 def run_transcription(transcript_pk: int, input_path: Path, quality: str, language: Optional[str],
                       api_key: str, webhook_context: dict, requested_at: datetime) -> None:
     """Convert, transcribe and store the result on an existing "processing" row.
@@ -272,8 +293,10 @@ def run_transcription(transcript_pk: int, input_path: Path, quality: str, langua
         row = db.query(Transcript).filter(Transcript.id == transcript_pk).first()
         if row is None:
             return  # deleted by the user while it was processing
+        original_name = webhook_context.get("filename")
         row.text_content = transcript_text
         row.json_content = json.dumps(job.json_response) if hasattr(job, 'json_response') else None
+        _auto_title_and_summary(row, original_name)
         row.status = "completed"
         row.error = None
         db.commit()
@@ -564,6 +587,7 @@ async def list_transcripts(
             "id": t.id,
             "tags": [tag.tag for tag in t.tags],
             "pinned": bool(t.pinned),
+            "summary": t.summary,
             "status": t.status or "completed",
             "error": t.error,
             "transcript_id": t.transcript_id,
@@ -601,7 +625,34 @@ def get_transcript_status(
         "filename": row.filename,
         "tags": [t.tag for t in row.tags],
         "pinned": bool(row.pinned),
+        "summary": row.summary,
     }
+
+
+@app.post("/transcripts/{transcript_id}/summary")
+def generate_transcript_summary(
+    transcript_id: int,
+    user: str = Depends(authenticate_token),
+    db: Session = Depends(get_db)
+):
+    """(Re)generate the summary, for transcripts made before summaries existed. The name is left alone."""
+    db_user = get_user_by_email(db, user)
+    row = db.query(Transcript).filter(
+        Transcript.id == transcript_id, Transcript.user_id == db_user.id
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+    if row.status != "completed" or len(row.text_content or "") < MIN_SUMMARY_CHARS:
+        raise HTTPException(status_code=400, detail="This transcript is too short to summarise")
+    try:
+        row.summary = llm.summarize(row.text_content)["summary"]
+    except llm.ChatNotConfigured as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        print(f"[SUMMARY] Failed: {e}", flush=True)
+        raise HTTPException(status_code=502, detail="The summary could not be generated, try again")
+    db.commit()
+    return {"summary": row.summary}
 
 
 class TranscriptUpdate(BaseModel):
@@ -853,6 +904,7 @@ class SettingsUpdate(BaseModel):
     theme: Optional[str] = None
     date_format: Optional[str] = None
     font_size: Optional[str] = None
+    auto_summary: Optional[bool] = None
 
 
 @app.get("/settings")
@@ -872,6 +924,7 @@ async def get_settings(
             "temperature": "0.7",
             "default_quality": "medium",
             "default_language": None,
+            "auto_summary": True,
             "theme": "system",
             "date_format": "us",
             "font_size": "medium"
@@ -885,6 +938,7 @@ async def get_settings(
         "temperature": db_user.settings.temperature or "0.7",
         "default_quality": db_user.settings.default_quality or "medium",
         "default_language": db_user.settings.default_language,
+        "auto_summary": bool(db_user.settings.auto_summary) if db_user.settings.auto_summary is not None else True,
         "theme": db_user.settings.theme or "system",
         "date_format": db_user.settings.date_format or "us",
         "font_size": db_user.settings.font_size or "medium"
@@ -920,6 +974,8 @@ async def update_settings(
         db_user.settings.default_quality = settings.default_quality
     if settings.default_language is not None:
         db_user.settings.default_language = settings.default_language or None
+    if settings.auto_summary is not None:
+        db_user.settings.auto_summary = 1 if settings.auto_summary else 0
     if settings.theme is not None:
         db_user.settings.theme = settings.theme
     if settings.date_format is not None:
@@ -968,7 +1024,8 @@ async def get_transcript_utterances(
 
     return {
         "utterances": utterances,
-        "speakers": mappings
+        "speakers": mappings,
+        "summary": transcript.summary,
     }
 
 
