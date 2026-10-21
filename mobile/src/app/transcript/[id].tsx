@@ -3,7 +3,8 @@ import * as Clipboard from 'expo-clipboard'
 import { Ionicons } from '@expo/vector-icons'
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ActionSheetIOS, ActivityIndicator, Alert, Platform, Pressable, Share, Text, TextInput, View } from 'react-native'
+import { ActionSheetIOS, ActivityIndicator, Alert, Keyboard, Platform, Pressable, Share, Text, TextInput, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CONSENT_DECLINED, useAiConsent } from '../../components/AiConsent'
 import { PlayerControls } from '../../components/AudioPreview'
 import { ChatPanel } from '../../components/ChatPanel'
@@ -35,6 +36,7 @@ import { useTheme } from '../../lib/theme'
 
 export default function TranscriptScreen() {
   const t = useTheme()
+  const insets = useSafeAreaInsets()
   const { ensure } = useAiConsent()
   const { id: rawId } = useLocalSearchParams<{ id: string }>()
   const id = Number(rawId)
@@ -57,6 +59,19 @@ export default function TranscriptScreen() {
   const [recUri, setRecUri] = useState<string | null>(null)
   const player = useAudioPlayer(recUri ? { uri: recUri } : null)
   const playerStatus = useAudioPlayerStatus(player)
+
+  // The bottom bar rides above the iOS keyboard (Android resizes the window by itself).
+  const [keyboard, setKeyboard] = useState(0)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return
+    const show = Keyboard.addListener('keyboardWillShow', (e) => setKeyboard(e.endCoordinates.height))
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboard(0))
+    return () => {
+      show.remove()
+      hide.remove()
+    }
+  }, [])
 
   // Search in the transcript
   const [query, setQuery] = useState('')
@@ -168,6 +183,15 @@ export default function TranscriptScreen() {
     }
   }
 
+  const copyText = () =>
+    withText(async (text) => {
+      await Clipboard.setStringAsync(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+
+  const shareText = () => withText((text) => Share.share({ message: text, title: filename }))
+
   const confirmDelete = () =>
     Alert.alert('Supprimer la transcription ?', 'Cette action est irréversible.', [
       { text: 'Annuler', style: 'cancel' },
@@ -181,8 +205,8 @@ export default function TranscriptScreen() {
   const menu = () => {
     const actions: [string, () => void][] = [
       [timestamps ? 'Masquer les horodatages' : 'Afficher les horodatages', () => setTimestamps((v) => !v)],
-      ['Partager le texte', () => withText((text) => Share.share({ message: text, title: filename }))],
-      ['Copier le texte', () => withText((text) => Clipboard.setStringAsync(text))],
+      ['Partager le texte', shareText],
+      ['Copier le texte', copyText],
       [pinned ? 'Désépingler' : 'Épingler en haut', togglePin],
       ['Renommer', () => setRenameFile(true)],
       ['Supprimer', confirmDelete],
@@ -272,29 +296,6 @@ export default function TranscriptScreen() {
                 </Card>
               </View>
             )}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 12 }}>
-              <TextInput
-                value={query}
-                onChangeText={onQueryChange}
-                placeholder="Rechercher dans la transcription…"
-                placeholderTextColor={t.muted}
-                clearButtonMode="while-editing"
-                returnKeyType="search"
-                onSubmitEditing={() => goToMatch(matchPos + 1, matches)}
-                style={{ flex: 1, minHeight: 42, borderRadius: 12, borderWidth: 1, borderColor: t.border, backgroundColor: t.card, color: t.text, paddingHorizontal: 14, fontSize: 15 }}
-              />
-              {query.trim() !== '' && (
-                <>
-                  <Muted style={{ minWidth: 44, textAlign: 'center' }}>{matches.length === 0 ? '0' : `${matchPos + 1}/${matches.length}`}</Muted>
-                  <Pressable accessibilityLabel="Résultat précédent" hitSlop={8} onPress={() => goToMatch(matchPos - 1, matches)} disabled={matches.length === 0}>
-                    <Ionicons name="chevron-up" size={24} color={matches.length ? t.primary : t.muted} />
-                  </Pressable>
-                  <Pressable accessibilityLabel="Résultat suivant" hitSlop={8} onPress={() => goToMatch(matchPos + 1, matches)} disabled={matches.length === 0}>
-                    <Ionicons name="chevron-down" size={24} color={matches.length ? t.primary : t.muted} />
-                  </Pressable>
-                </>
-              )}
-            </View>
             <UtteranceList
               utterances={utterances}
               showTimestamps={timestamps}
@@ -305,6 +306,50 @@ export default function TranscriptScreen() {
               focus={jump}
               follow={playerStatus.playing && !query.trim() ? activeIndex : undefined}
             />
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                paddingHorizontal: 16,
+                paddingTop: 10,
+                paddingBottom: keyboard > 0 ? keyboard + 10 : Math.max(insets.bottom, 10),
+                borderTopWidth: 1,
+                borderTopColor: t.border,
+                backgroundColor: t.card,
+              }}
+            >
+              <TextInput
+                value={query}
+                onChangeText={onQueryChange}
+                placeholder="Rechercher…"
+                placeholderTextColor={t.muted}
+                clearButtonMode="while-editing"
+                returnKeyType="search"
+                onSubmitEditing={() => goToMatch(matchPos + 1, matches)}
+                style={{ flex: 1, minHeight: 40, borderRadius: 12, borderWidth: 1, borderColor: t.border, backgroundColor: t.bg, color: t.text, paddingHorizontal: 14, fontSize: 15 }}
+              />
+              {query.trim() !== '' ? (
+                <>
+                  <Muted style={{ minWidth: 40, textAlign: 'center' }}>{matches.length === 0 ? '0' : `${matchPos + 1}/${matches.length}`}</Muted>
+                  <Pressable accessibilityLabel="Résultat précédent" hitSlop={8} onPress={() => goToMatch(matchPos - 1, matches)} disabled={matches.length === 0}>
+                    <Ionicons name="chevron-up" size={24} color={matches.length ? t.primary : t.muted} />
+                  </Pressable>
+                  <Pressable accessibilityLabel="Résultat suivant" hitSlop={8} onPress={() => goToMatch(matchPos + 1, matches)} disabled={matches.length === 0}>
+                    <Ionicons name="chevron-down" size={24} color={matches.length ? t.primary : t.muted} />
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Pressable accessibilityLabel="Copier le texte" hitSlop={8} onPress={copyText} style={{ padding: 6 }}>
+                    <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={24} color={t.primary} />
+                  </Pressable>
+                  <Pressable accessibilityLabel="Partager le texte" hitSlop={8} onPress={shareText} style={{ padding: 6 }}>
+                    <Ionicons name="share-outline" size={24} color={t.primary} />
+                  </Pressable>
+                </>
+              )}
+            </View>
           </View>
         ) : (
           <ActivityIndicator style={{ marginTop: 40 }} color={t.primary} />
