@@ -243,6 +243,10 @@ export interface GuestResult {
   id: string
   text: string
   utterances: Utterance[]
+  /** Full transcript JSON, kept so the transcript can be saved to an account later. */
+  json_response?: object | null
+  /** Name of the audio, used as the title once saved. */
+  name?: string
 }
 
 export const transcribeAudioGuest = (audio: PickedAudio, onProgress?: (p: number) => void) =>
@@ -256,6 +260,10 @@ export const transcribeAudioGuest = (audio: PickedAudio, onProgress?: (p: number
         .then((r) => r.data),
     onProgress
   )
+
+/** Saves a guest transcript into the account that just signed in. */
+export const importGuestTranscript = (g: GuestResult) =>
+  api.post('/transcripts/import', { filename: g.name, text: g.text, json_response: g.json_response ?? null }, { timeout: 60000 })
 
 // ---------- Transcripts ----------
 export const listTranscripts = () => api.get<TranscriptSummary[]>('/transcripts/list').then((r) => r.data)

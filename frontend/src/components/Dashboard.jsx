@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Clock, Settings, HelpCircle, MessageSquare } from 'lucide-react'
 import { clearTokens } from '../utils/auth'
-import { listTranscripts, getCurrentUser, api } from '../services/api'
+import { listTranscripts, getCurrentUser, adoptGuestTranscript, api } from '../services/api'
 import Upload from './Upload'
 import TranscriptViewer from './TranscriptViewer'
 
@@ -74,7 +74,8 @@ function Dashboard({ setIsAuthenticated }) {
 
   // Load transcripts on mount
   useEffect(() => {
-    loadTranscripts()
+    // A transcript made as a guest joins the account first, so it shows up in the list.
+    adoptGuestTranscript().finally(loadTranscripts)
   }, [])
 
   const loadTranscripts = async () => {

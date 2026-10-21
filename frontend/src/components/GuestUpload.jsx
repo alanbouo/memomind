@@ -90,7 +90,7 @@ function GuestUpload({ onTranscriptComplete }) {
       setMessage('Transcription completed!')
       
       if (onTranscriptComplete) {
-        onTranscriptComplete(result)
+        onTranscriptComplete({ ...result, name: file.name })
       }
     } catch (error) {
       setStatus('error')

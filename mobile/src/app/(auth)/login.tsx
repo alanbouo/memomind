@@ -10,7 +10,7 @@ const RESEND_SECONDS = 60
 
 export default function Login() {
   const t = useTheme()
-  const { signInWithCode, enterGuest } = useAuth()
+  const { signInWithCode, enterGuest, guestResult } = useAuth()
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
@@ -72,6 +72,12 @@ export default function Login() {
           <Text style={{ color: t.text, fontSize: 28, fontWeight: '800', marginTop: 12 }}>MemoMind</Text>
           <Muted>Transcrivez vos mémos vocaux</Muted>
         </View>
+
+        {guestResult && (
+          <View style={{ padding: 12, borderRadius: 12, backgroundColor: t.primarySoft, marginBottom: 20 }}>
+            <Text style={{ color: t.text }}>Votre transcription sera enregistrée dans votre compte dès que vous serez connecté.</Text>
+          </View>
+        )}
 
         {sentTo ? (
           <>

@@ -11,7 +11,7 @@ import { useTheme } from '../lib/theme'
 
 export default function Guest() {
   const t = useTheme()
-  const { guestResult, setGuestResult, signOut } = useAuth()
+  const { guestResult, setGuestResult, leaveGuest } = useAuth()
   const { ensure } = useAiConsent()
   const [tab, setTab] = useState<'text' | 'chat'>('text')
 
@@ -23,13 +23,13 @@ export default function Guest() {
           onSubmit={async (audio, onProgress) => {
             if (!(await ensure())) throw new Error(CONSENT_DECLINED)
             try {
-              setGuestResult(await transcribeAudioGuest(audio, onProgress))
+              setGuestResult({ ...(await transcribeAudioGuest(audio, onProgress)), name: audio.name })
             } catch (e) {
               throw new Error(errorMessage(e, 'Échec de la transcription'))
             }
           }}
         />
-        <Button title="Se connecter / créer un compte" variant="ghost" onPress={signOut} style={{ marginTop: 16 }} />
+        <Button title="Se connecter / créer un compte" variant="ghost" onPress={leaveGuest} style={{ marginTop: 16 }} />
       </Screen>
     )
   }
@@ -42,6 +42,10 @@ export default function Guest() {
             <Text style={{ color: tab === k ? t.text : t.muted, fontWeight: '600' }}>{k === 'text' ? 'Transcription' : 'Chat IA'}</Text>
           </Pressable>
         ))}
+      </View>
+      <View style={{ margin: 16, marginBottom: 0, padding: 12, borderRadius: 12, backgroundColor: t.primarySoft, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <Text style={{ flex: 1, color: t.text }}>Cette transcription n&apos;est pas sauvegardée. Créez un compte pour la garder.</Text>
+        <Button title="Créer un compte" onPress={leaveGuest} />
       </View>
       {tab === 'text' ? (
         <UtteranceList utterances={guestResult.utterances} showTimestamps />

@@ -255,6 +255,33 @@ export const updateSpeakerMapping = async (transcriptId, originalLabel, displayN
 
 // ============== Guest Mode Functions ==============
 
+// A transcript made as a guest is kept for the tab's session so it can be saved once the person signs in.
+const GUEST_KEY = 'memomind-guest-transcript'
+
+export const rememberGuestTranscript = (result) => {
+  try {
+    sessionStorage.setItem(GUEST_KEY, JSON.stringify({ filename: result.name, text: result.text, json_response: result.json_response ?? null }))
+  } catch { /* storage full or blocked: the transcript just won't carry over */ }
+}
+
+export const forgetGuestTranscript = () => {
+  try { sessionStorage.removeItem(GUEST_KEY) } catch { /* nothing to forget */ }
+}
+
+/** Saves the remembered guest transcript to the signed-in account. Resolves true if one was saved. */
+export const adoptGuestTranscript = async () => {
+  let saved = null
+  try { saved = JSON.parse(sessionStorage.getItem(GUEST_KEY)) } catch { /* none */ }
+  if (!saved) return false
+  try {
+    await api.post('/transcripts/import', saved)
+    forgetGuestTranscript()
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const transcribeAudioGuest = async (file, quality = 'medium', onProgress) => {
   const formData = new FormData()
   formData.append('file', file)

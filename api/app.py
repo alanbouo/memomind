@@ -909,6 +909,41 @@ class ChatResponse(BaseModel):
     created_at: str
 
 
+class ImportedTranscript(BaseModel):
+    filename: Optional[str] = None
+    text: str
+    json_response: Optional[dict] = None  # the guest result's full transcript JSON (keeps timestamps and words)
+
+
+MAX_IMPORT_CHARS = 2_000_000
+
+
+@app.post("/transcripts/import")
+async def import_transcript(
+    body: ImportedTranscript,
+    email: str = Depends(authenticate_token),
+    db: Session = Depends(get_db),
+):
+    """Save a transcript produced in guest mode into the account that was just created"""
+    json_content = json.dumps(body.json_response) if body.json_response else None
+    if not body.text.strip() or len(body.text) + len(json_content or "") > MAX_IMPORT_CHARS:
+        raise HTTPException(status_code=400, detail="Nothing to import, or too large")
+    user = get_user_by_email(db, email)
+    name = (body.filename or "").strip()[:200] or "Transcription"
+    row = Transcript(
+        transcript_id=f"import_{uuid.uuid4().hex[:12]}",
+        user=user,  # the relationship, so the auto-summary setting is honoured
+        filename=name,
+        text_content=body.text,
+        json_content=json_content,
+        status="completed",
+    )
+    _auto_title_and_summary(row, name)
+    db.add(row)
+    db.commit()
+    return {"database_id": row.id}
+
+
 class SpeakerUpdate(BaseModel):
     original_label: str
     display_name: str

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { UserPlus, X, Send, Loader2, Clock } from 'lucide-react'
-import { transcribeAudioGuest, sendChatMessageGuest } from '../services/api'
+import { transcribeAudioGuest, sendChatMessageGuest, rememberGuestTranscript, forgetGuestTranscript } from '../services/api'
 import GuestUpload from './GuestUpload'
 import { formatRange } from '../utils/time'
 
@@ -11,6 +11,7 @@ function GuestDashboard({ setGuestMode }) {
 
   const handleTranscriptComplete = (result) => {
     setTranscript(result)
+    rememberGuestTranscript(result)
     // Show signup prompt after successful transcription
     setTimeout(() => setShowSignupPrompt(true), 2000)
   }
@@ -60,6 +61,7 @@ function GuestDashboard({ setGuestMode }) {
             <GuestTranscriptView 
               transcript={transcript} 
               onNewTranscript={() => {
+                forgetGuestTranscript()
                 setTranscript(null)
                 setShowSignupPrompt(false)
               }}
