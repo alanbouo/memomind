@@ -370,6 +370,10 @@ export const getSettings = () => api.get<UserSettings>('/settings').then((r) => 
 
 export const updateSettings = (patch: Partial<UserSettings>) => api.put('/settings', patch)
 
+export const registerPushToken = (token: string, platform: string) => api.post('/push/register', { token, platform })
+
+export const unregisterPushToken = (token: string) => api.post('/push/unregister', { token })
+
 export const deleteAccount = () => api.delete('/account')
 
 // Fetches the ZIP of all transcripts and returns a local file ready to share.

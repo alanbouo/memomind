@@ -56,8 +56,9 @@ class User(Base):
     is_active = Column(Integer, default=1)
     
     # Relationships
-    transcripts = relationship("Transcript", back_populates="user")
-    settings = relationship("UserSettings", back_populates="user", uselist=False)
+    transcripts = relationship("Transcript", back_populates="user", cascade="all, delete-orphan")
+    settings = relationship("UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    push_tokens = relationship("PushToken", cascade="all, delete-orphan")
 
 
 class Transcript(Base):
@@ -135,6 +136,17 @@ class LoginCode(Base):
     expires_at = Column(DateTime, nullable=False)
     attempts = Column(Integer, default=0)
     used = Column(Integer, default=0)  # 0 = still valid, 1 = used or burned
+
+
+class PushToken(Base):
+    """Expo push token of a device where the user wants to be notified"""
+    __tablename__ = "push_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    token = Column(String, unique=True, index=True, nullable=False)
+    platform = Column(String, nullable=True)  # ios / android
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class PasswordResetToken(Base):

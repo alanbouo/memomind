@@ -14,6 +14,7 @@ import { useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { PickedAudio } from '../lib/api'
+import { offerNotificationsOnce } from '../lib/notifications'
 import { localStamp } from '../lib/dates'
 import { Marker, newMarker } from '../lib/markers'
 import {
@@ -245,6 +246,7 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
     try {
       await onSubmit(audio, setProgress)
       setAudio(null)
+      if (persist) offerNotificationsOnce() // signed-in users are told when the transcription ends
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Échec de la transcription')
     } finally {

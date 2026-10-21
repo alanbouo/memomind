@@ -24,7 +24,7 @@ from scripts.transcribe import transcribe_audio
 from scripts.export import save_transcript_json, save_transcript_txt
 from api import webhooks
 from api.oidc import OIDCError, verify_id_token, verified_email
-from api.database import init_db, get_db, SessionLocal, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, LoginCode, TranscriptTag
+from api.database import init_db, get_db, SessionLocal, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, LoginCode, TranscriptTag, PushToken
 from api.emailcode import (
     CODE_TTL_MINUTES, MAX_ATTEMPTS, MAX_CODES_PER_HOUR, RESEND_COOLDOWN_SECONDS,
     codes_match, generate_code, hash_code, send_login_code,
@@ -34,7 +34,7 @@ from api.auth import (
     create_refresh_token,
     decode_token
 )
-from api import llm
+from api import llm, push
 import json
 import jwt
 
@@ -327,11 +327,35 @@ def run_transcription(transcript_pk: int, input_path: Path, quality: str, langua
                 print(f"Warning: Failed to cleanup {path}: {cleanup_error}")
 
 
-def _run_in_background(*args) -> None:
+def _notify_finished(transcript_pk: int, ok: bool) -> None:
+    """Tell the user's devices that a background transcription ended. Never raises."""
+    db = SessionLocal()
     try:
-        run_transcription(*args)
+        row = db.query(Transcript).filter(Transcript.id == transcript_pk).first()
+        if row is None:
+            return
+        title = "Transcription terminée" if ok else "Échec de la transcription"
+        body = row.filename or ""
+        user_id = row.user_id
+    except Exception as e:
+        print(f"[PUSH] Skipped: {e}", flush=True)
+        return
+    finally:
+        db.close()
+    try:
+        push.notify_user(user_id, title, body, {"transcriptId": transcript_pk})
+    except Exception as e:
+        print(f"[PUSH] Skipped: {e}", flush=True)
+
+
+def _run_in_background(transcript_pk: int, *args) -> None:
+    try:
+        run_transcription(transcript_pk, *args)
     except Exception as e:
         print(f"[TRANSCRIBE] Background job failed: {e}", flush=True)
+        _notify_finished(transcript_pk, False)
+    else:
+        _notify_finished(transcript_pk, True)
 
 
 @app.post("/transcribe")
@@ -1290,6 +1314,35 @@ async def export_all_data(
             "Content-Disposition": f"attachment; filename=memomind_export_{datetime.utcnow().strftime('%Y%m%d')}.zip"
         }
     )
+
+
+class PushRegistration(BaseModel):
+    token: str
+    platform: Optional[str] = None
+
+
+@app.post("/push/register")
+async def register_push(body: PushRegistration, email: str = Depends(authenticate_token), db: Session = Depends(get_db)):
+    """Opt this device in to a notification when a transcription ends"""
+    if not push.is_expo_token(body.token):
+        raise HTTPException(status_code=400, detail="Invalid push token")
+    user = get_user_by_email(db, email)
+    row = db.query(PushToken).filter(PushToken.token == body.token).first()
+    if row is None:
+        db.add(PushToken(user_id=user.id, token=body.token, platform=body.platform))
+    else:  # the device changed hands: the token now belongs to this user
+        row.user_id = user.id
+        row.platform = body.platform
+    db.commit()
+    return {"status": "success"}
+
+
+@app.post("/push/unregister")
+async def unregister_push(body: PushRegistration, email: str = Depends(authenticate_token), db: Session = Depends(get_db)):
+    user = get_user_by_email(db, email)
+    db.query(PushToken).filter(PushToken.token == body.token, PushToken.user_id == user.id).delete()
+    db.commit()
+    return {"status": "success"}
 
 
 @app.delete("/account")

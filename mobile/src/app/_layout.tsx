@@ -1,14 +1,28 @@
-import { Stack } from 'expo-router'
+import * as Notifications from 'expo-notifications'
+import { router, Stack } from 'expo-router'
+import { useEffect } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import { ActivityIndicator, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AiConsentProvider } from '../components/AiConsent'
 import { AuthProvider, useAuth } from '../lib/auth'
+import { syncNotifications } from '../lib/notifications'
 import { useTheme } from '../lib/theme'
 
 function RootNavigator() {
   const { status } = useAuth()
   const t = useTheme()
+  const lastResponse = Notifications.useLastNotificationResponse()
+
+  useEffect(() => {
+    if (status === 'signedIn') syncNotifications().catch(() => {})
+  }, [status])
+
+  // Tapping "transcription terminée" opens that transcript.
+  useEffect(() => {
+    const id = lastResponse?.notification.request.content.data?.transcriptId
+    if (status === 'signedIn' && typeof id === 'number') router.push(`/transcript/${id}`)
+  }, [lastResponse, status])
 
   if (status === 'loading') {
     return (

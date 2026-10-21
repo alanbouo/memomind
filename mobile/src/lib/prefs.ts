@@ -6,6 +6,10 @@ export interface LocalPrefs {
   keepRecordings: boolean
   /** When the user agreed to their audio and text being processed by AI services (ISO), if they did. */
   aiConsentAt?: string
+  /** Expo push token registered for this account on this device, when notifications are on. */
+  pushToken?: string
+  /** The notification permission was already asked once (we only offer it automatically once). */
+  pushAsked?: boolean
 }
 
 const FILE = 'prefs.json'
@@ -19,3 +23,6 @@ export const setKeepRecordings = (keepRecordings: boolean) => update({ keepRecor
 export const hasAiConsent = () => getLocalPrefs().aiConsentAt !== undefined
 export const grantAiConsent = () => update({ aiConsentAt: new Date().toISOString() })
 export const revokeAiConsent = () => update({ aiConsentAt: undefined })
+
+export const setPushToken = (pushToken: string | undefined) => update({ pushToken })
+export const markPushAsked = () => update({ pushAsked: true })

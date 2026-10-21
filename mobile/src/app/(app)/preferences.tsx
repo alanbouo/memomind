@@ -11,6 +11,7 @@ import {
   updateSettings,
 } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
+import { disableNotifications, enableNotifications } from '../../lib/notifications'
 import { getLocalPrefs, revokeAiConsent, setKeepRecordings } from '../../lib/prefs'
 import { listRecordings, totalSize } from '../../lib/recordings'
 import { useTheme } from '../../lib/theme'
@@ -49,6 +50,7 @@ export default function Preferences() {
   const [promptsMsg, setPromptsMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [exporting, setExporting] = useState(false)
   const [keep, setKeep] = useState(() => getLocalPrefs().keepRecordings)
+  const [notify, setNotify] = useState(() => getLocalPrefs().pushToken !== undefined)
   const [consentAt, setConsentAt] = useState(() => getLocalPrefs().aiConsentAt)
   const [local, setLocal] = useState({ count: 0, bytes: 0 })
 
@@ -173,6 +175,30 @@ export default function Preferences() {
                 setAutoSummary(!v)
                 Alert.alert('Erreur', errorMessage(e))
               })
+            }}
+            trackColor={{ true: t.primary }}
+          />
+        </View>
+      </Card>
+
+      <Card style={{ marginBottom: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontWeight: '700', marginBottom: 4 }}>Notification de fin</Text>
+            <Muted>Soyez prévenu quand une transcription est terminée, même si l&apos;app est fermée.</Muted>
+          </View>
+          <Switch
+            value={notify}
+            onValueChange={async (v) => {
+              setNotify(v)
+              if (!v) return disableNotifications()
+              if (!(await enableNotifications())) {
+                setNotify(false)
+                Alert.alert('Notifications indisponibles', "Autorisez les notifications pour MemoMind dans les réglages de l'appareil.", [
+                  { text: 'Plus tard', style: 'cancel' },
+                  { text: 'Ouvrir les réglages', onPress: () => Linking.openSettings() },
+                ])
+              }
             }}
             trackColor={{ true: t.primary }}
           />

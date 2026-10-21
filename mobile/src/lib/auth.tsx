@@ -2,6 +2,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import * as api from './api'
 import { clearCache } from './cache'
 import { clearMarkers } from './markers'
+import { disableNotifications } from './notifications'
 import { clearTokens, loadTokens, saveTokens } from './storage'
 import { getAppleIdToken, getGoogleIdToken, SocialProvider } from './social'
 
@@ -27,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [guestResult, setGuestResult] = useState<api.GuestResult | null>(null)
 
   const signOut = useCallback(async () => {
+    await disableNotifications() // while the session is still valid: this device must stop receiving this account's alerts
     await clearTokens()
     clearCache() // the next person to sign in must not see these transcripts
     clearMarkers()
