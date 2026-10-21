@@ -31,6 +31,7 @@ import {
 } from '../../lib/api'
 import { cached, readCached } from '../../lib/cache'
 import { findByTranscript, onTranscriptionsCompleted, releaseRecording } from '../../lib/recordings'
+import { getMarkers, Marker, renameMarker } from '../../lib/markers'
 import { findRanges } from '../../lib/search'
 import { useTheme } from '../../lib/theme'
 
@@ -47,6 +48,8 @@ export default function TranscriptScreen() {
   const [error, setError] = useState<string | null>(null)
   const [renameFile, setRenameFile] = useState(false)
   const [speaker, setSpeaker] = useState<Utterance | null>(null)
+  const [markers, setMarkers] = useState<Marker[]>(() => getMarkers(id))
+  const [markerToRename, setMarkerToRename] = useState<Marker | null>(null)
 
   const [status, setStatus] = useState<TranscriptStatus | null>(null)
   const [offline, setOffline] = useState(false)
@@ -96,12 +99,14 @@ export default function TranscriptScreen() {
     if (next.length > 0) setJump((j) => ({ index: next[0], n: (j?.n ?? 0) + 1 }))
   }
 
-  const playFrom = async (u: Utterance) => {
-    if (!recUri || u.start === undefined) return
+  const playAt = async (ms: number) => {
+    if (!recUri) return
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true })
-    await player.seekTo(u.start / 1000)
+    await player.seekTo(ms / 1000)
     player.play()
   }
+
+  const playFrom = (u: Utterance) => (u.start === undefined ? undefined : playAt(u.start))
 
   // The utterance under the playhead (last one that started), while there is audio to follow.
   const activeIndex = useMemo(() => {
@@ -301,6 +306,9 @@ export default function TranscriptScreen() {
               showTimestamps={timestamps}
               onSpeakerPress={setSpeaker}
               onUtterancePress={recUri ? playFrom : undefined}
+              markers={markers}
+              onMarkerPress={recUri ? (m) => playAt(m.atMs) : undefined}
+              onMarkerRename={(m) => setMarkerToRename(m)}
               activeIndex={activeIndex}
               query={query}
               focus={jump}
@@ -382,6 +390,19 @@ export default function TranscriptScreen() {
           } catch (e) {
             Alert.alert('Erreur', errorMessage(e))
           }
+        }}
+      />
+      <PromptModal
+        visible={!!markerToRename}
+        title="Renommer le repère"
+        initialValue={markerToRename?.label ?? ''}
+        onCancel={() => setMarkerToRename(null)}
+        onSubmit={async (v) => {
+          const target = markerToRename
+          setMarkerToRename(null)
+          if (!target || !v.trim()) return
+          renameMarker(id, target.id, v.trim())
+          setMarkers(getMarkers(id))
         }}
       />
       <PromptModal

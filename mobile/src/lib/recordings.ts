@@ -1,5 +1,6 @@
 import { File } from 'expo-file-system'
 import { readJson, writeJson } from './localStore'
+import { Marker, setMarkers } from './markers'
 import { getLocalPrefs } from './prefs'
 
 /**
@@ -14,6 +15,7 @@ export interface Recording {
   durationMs: number
   /** Set once the file was sent for transcription (server-side id). */
   transcriptId?: number
+  markers?: Marker[]
 }
 
 /** A recording that started but was never stopped (app killed, crash): recovered on next launch. */
@@ -21,6 +23,7 @@ interface InProgress {
   uri: string
   name: string
   startedAt: string
+  markers?: Marker[]
 }
 
 interface Index {
@@ -78,6 +81,8 @@ export function addRecording(r: Omit<Recording, 'id' | 'createdAt'> & { createdA
 
 export function updateRecording(id: string, patch: Partial<Recording>) {
   const index = load()
+  // Once sent, the markers move to the transcript so they outlive the audio file.
+  if (patch.transcriptId !== undefined) setMarkers(patch.transcriptId, index.recordings.find((r) => r.id === id)?.markers ?? [])
   save({ ...index, recordings: index.recordings.map((r) => (r.id === id ? { ...r, ...patch } : r)) })
 }
 
@@ -115,6 +120,14 @@ export function markRecordingStarted(uri: string, name: string) {
   save({ ...load(), inProgress: { uri, name, startedAt: new Date().toISOString() } })
 }
 
+/** Remember the markers of the recording in progress, so a crash does not lose them. */
+export function saveInProgressMarkers(markers: Marker[]) {
+  const index = load()
+  if (index.inProgress) save({ ...index, inProgress: { ...index.inProgress, markers } })
+}
+
+export const inProgressMarkers = (): Marker[] => load().inProgress?.markers ?? []
+
 export function markRecordingEnded() {
   const { inProgress: _gone, ...rest } = load()
   save(rest)
@@ -129,7 +142,7 @@ export function recoverInterrupted(): Recording | null {
     removeFile(inProgress.uri)
     return null
   }
-  return addRecording({ name: `${inProgress.name} (récupéré)`, uri: inProgress.uri, durationMs: 0, createdAt: inProgress.startedAt })
+  return addRecording({ name: `${inProgress.name} (récupéré)`, uri: inProgress.uri, durationMs: 0, createdAt: inProgress.startedAt, markers: inProgress.markers })
 }
 
 export const mimeTypeFor = (uri: string): string =>

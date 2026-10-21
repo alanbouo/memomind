@@ -456,6 +456,50 @@ function TranscriptViewer({ transcripts, onTranscriptDeleted, onTranscriptRename
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {(() => {
+                      const labels = [...new Set((transcriptData.utterances || []).map(u => u.speaker))]
+                      if (labels.length === 0) return null
+                      const unnamed = labels.some(l => !transcriptData.speakers[l] || transcriptData.speakers[l] === l)
+                      return (
+                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Speakers</p>
+                          <div className="flex flex-wrap gap-2">
+                            {labels.map(label => editingSpeaker === label ? (
+                              <div key={label} className="inline-flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  className="text-sm font-medium border border-primary-500 dark:border-primary-400 dark:bg-gray-700 dark:text-white rounded-full px-3 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveSpeakerName()
+                                    if (e.key === 'Escape') setEditingSpeaker(null)
+                                  }}
+                                />
+                                <button onClick={saveSpeakerName} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Save"><Check className="w-4 h-4" /></button>
+                                <button onClick={() => setEditingSpeaker(null)} className="p-1 text-red-600 hover:bg-red-50 rounded" title="Cancel"><X className="w-4 h-4" /></button>
+                              </div>
+                            ) : (
+                              <button
+                                key={label}
+                                onClick={() => startEditing(label, getSpeakerName(label))}
+                                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-600 text-sm font-medium text-gray-800 dark:text-gray-200 hover:border-primary-500 hover:text-primary-700 dark:hover:text-primary-400 transition-colors"
+                                title="Rename speaker"
+                              >
+                                {getSpeakerName(label)}
+                                <Edit2 className="w-3 h-3 text-gray-400" />
+                              </button>
+                            ))}
+                          </div>
+                          {unnamed && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                              Click a speaker to give them a name. It applies everywhere, including the AI chat.
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })()}
                     {transcriptData.utterances && transcriptData.utterances.length > 0 ? (
                       transcriptData.utterances.map((utterance, index) => {
                         // A monologue is split into many segments; only label
@@ -501,7 +545,7 @@ function TranscriptViewer({ transcripts, onTranscriptDeleted, onTranscriptRename
                                   </span>
                                   <button
                                     onClick={() => startEditing(utterance.speaker, getSpeakerName(utterance.speaker))}
-                                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-primary-600 transition-opacity"
+                                    className="p-1 text-gray-400 hover:text-primary-600"
                                     title="Rename speaker"
                                   >
                                     <Edit2 className="w-3 h-3" />

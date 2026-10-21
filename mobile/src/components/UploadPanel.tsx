@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native'
 import { PickedAudio } from '../lib/api'
 import { localStamp } from '../lib/dates'
+import { Marker, newMarker } from '../lib/markers'
 import {
   addRecording,
   deleteRecording,
@@ -24,6 +25,7 @@ import {
   mimeTypeFor,
   recoverInterrupted,
   removeFile,
+  saveInProgressMarkers,
 } from '../lib/recordings'
 import { useTheme } from '../lib/theme'
 import { AudioPreview } from './AudioPreview'
@@ -94,6 +96,7 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [takes, setTakes] = useState(0) // bumped per recording so the audiogram starts empty
+  const [markers, setMarkers] = useState<Marker[]>([])
 
   const busy = progress !== null
   const active = session !== 'idle'
@@ -158,6 +161,7 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
       recorder.record()
       setSession('recording')
       setTakes((n) => n + 1)
+      setMarkers([])
       setAudio(null)
       if (persist && recorder.uri) markRecordingStarted(recorder.uri, `enregistrement-${localStamp()}`)
     } catch (e) {
@@ -176,6 +180,13 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
     }
   }
 
+  const addMarker = () => {
+    const marker = newMarker(state.durationMillis, markers.length)
+    const next = [...markers, marker]
+    setMarkers(next)
+    saveInProgressMarkers(next)
+  }
+
   const stopRecording = async () => {
     const durationMs = state.durationMillis
     const uri = recorder.uri
@@ -186,7 +197,7 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
     if (!uri) return
     const name = `enregistrement-${localStamp()}`
     if (persist) {
-      const entry = addRecording({ name, uri, durationMs })
+      const entry = addRecording({ name, uri, durationMs, markers })
       markRecordingEnded()
       setAudio({ uri, name, mimeType: mimeTypeFor(uri), recordingId: entry.id })
     } else {
@@ -206,6 +217,7 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
           await setAudioModeAsync({ allowsRecording: false, allowsBackgroundRecording: false })
           if (uri) removeFile(uri)
           if (persist) markRecordingEnded()
+          setMarkers([])
           setSession('idle')
           setNote(null)
         },
@@ -265,7 +277,13 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
           <>
             <Waveform level={level} active={recording} resetKey={takes} />
             <Muted>{recording ? "Enregistrement en cours… vous pouvez quitter l'app" : 'En pause'}</Muted>
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginTop: 4 }}>
+              {persist && (
+                <Pressable accessibilityRole="button" accessibilityLabel="Poser un repère" onPress={addMarker} style={[styles.pill, { borderColor: t.primary, backgroundColor: t.primarySoft }]}>
+                  <Ionicons name="flag" size={18} color={t.primary} />
+                  <Text style={{ color: t.primary, fontWeight: '600' }}>Repère</Text>
+                </Pressable>
+              )}
               <Pressable accessibilityRole="button" onPress={togglePause} style={[styles.pill, { borderColor: t.border, backgroundColor: t.card }]}>
                 <Ionicons name={recording ? 'pause' : 'play'} size={18} color={t.primary} />
                 <Text style={{ color: t.text, fontWeight: '600' }}>{recording ? 'Pause' : 'Reprendre'}</Text>
@@ -275,6 +293,11 @@ export function UploadPanel({ onSubmit, persist = false }: Props) {
                 <Text style={{ color: t.danger, fontWeight: '600' }}>Annuler</Text>
               </Pressable>
             </View>
+            {markers.length > 0 && (
+              <Muted>
+                {markers.length} repère{markers.length > 1 ? 's' : ''} · dernier à {fmt(markers[markers.length - 1].atMs)}
+              </Muted>
+            )}
           </>
         ) : (
           <>
