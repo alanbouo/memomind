@@ -32,6 +32,13 @@
       "expo-secure-store",
       "expo-notifications",
       [
+        "expo-sharing",
+        {
+          "ios": { "enabled": true, "activationRule": { "supportsFileWithMaxCount": 1, "supportsMovieWithMaxCount": 1 } },
+          "android": { "enabled": true, "singleShareMimeTypes": ["audio/*", "video/*"], "multipleShareMimeTypes": [] }
+        }
+      ],
+      [
         "expo-audio",
         {
           "microphonePermission": "MemoMind utilise le micro pour enregistrer vos mémos vocaux à transcrire.",

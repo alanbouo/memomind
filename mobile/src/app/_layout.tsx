@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar'
 import { ActivityIndicator, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AiConsentProvider } from '../components/AiConsent'
+import { IncomingShare } from '../components/IncomingShare'
 import { AuthProvider, useAuth } from '../lib/auth'
 import { syncNotifications } from '../lib/notifications'
 import { useTheme } from '../lib/theme'
@@ -33,19 +34,22 @@ function RootNavigator() {
   }
 
   return (
-    <Stack screenOptions={{ headerStyle: { backgroundColor: t.card }, headerTintColor: t.text, contentStyle: { backgroundColor: t.bg } }}>
-      <Stack.Protected guard={status === 'signedIn'}>
-        <Stack.Screen name="(app)" options={{ headerShown: false }} />
-        <Stack.Screen name="transcript/[id]" options={{ title: 'Transcription' }} />
-        <Stack.Screen name="recordings" options={{ title: 'Enregistrements locaux' }} />
-      </Stack.Protected>
-      <Stack.Protected guard={status === 'signedOut'}>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      </Stack.Protected>
-      <Stack.Protected guard={status === 'guest'}>
-        <Stack.Screen name="guest" options={{ title: 'Mode invité' }} />
-      </Stack.Protected>
-    </Stack>
+    <>
+      {status === 'signedIn' && <IncomingShare />}
+      <Stack screenOptions={{ headerStyle: { backgroundColor: t.card }, headerTintColor: t.text, contentStyle: { backgroundColor: t.bg } }}>
+        <Stack.Protected guard={status === 'signedIn'}>
+          <Stack.Screen name="(app)" options={{ headerShown: false }} />
+          <Stack.Screen name="transcript/[id]" options={{ title: 'Transcription' }} />
+          <Stack.Screen name="recordings" options={{ title: 'Enregistrements locaux' }} />
+        </Stack.Protected>
+        <Stack.Protected guard={status === 'signedOut'}>
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        </Stack.Protected>
+        <Stack.Protected guard={status === 'guest'}>
+          <Stack.Screen name="guest" options={{ title: 'Mode invité' }} />
+        </Stack.Protected>
+      </Stack>
+    </>
   )
 }
 

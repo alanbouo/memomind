@@ -16,6 +16,7 @@ import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native
 import { PickedAudio } from '../lib/api'
 import { offerNotificationsOnce } from '../lib/notifications'
 import { localStamp } from '../lib/dates'
+import { onPendingImport, takePendingImport } from '../lib/incoming'
 import { Marker, newMarker } from '../lib/markers'
 import {
   addRecording,
@@ -118,6 +119,19 @@ export function UploadPanel({ onSubmit, persist = false, maxBytes }: Props) {
       setAudio((current) => current ?? (draft ? { uri: draft.uri, name: draft.name, mimeType: mimeTypeFor(draft.uri), recordingId: draft.id } : null))
     }, [persist, session])
   )
+
+  // A file shared from another app lands here, ready to be checked and transcribed.
+  useEffect(() => {
+    if (!persist) return
+    const pickUp = () => {
+      const shared = takePendingImport()
+      if (!shared || session !== 'idle') return
+      setError(null)
+      setAudio(shared)
+    }
+    pickUp()
+    return onPendingImport(pickUp)
+  }, [persist, session])
 
   // A phone call, a disconnected headset… stop the recorder without our involvement.
   useEffect(() => {
