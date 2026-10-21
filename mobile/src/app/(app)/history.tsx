@@ -2,9 +2,10 @@ import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Ionicons } from '@expo/vector-icons'
 import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { PromptModal } from '../../components/PromptModal'
 import { TagChip } from '../../components/Tags'
 import { Button, Card, ErrorText, Muted } from '../../components/ui'
-import { deleteTranscripts, errorMessage, getUtterances, listTranscripts, TranscriptSummary, updateTranscript } from '../../lib/api'
+import { deleteTranscripts, errorMessage, getUtterances, listTranscripts, renameTranscript, TranscriptSummary, updateTranscript } from '../../lib/api'
 import { cached, readCached } from '../../lib/cache'
 import { onTranscriptionsCompleted } from '../../lib/recordings'
 import { formatDateTime } from '../../lib/dates'
@@ -37,6 +38,7 @@ export default function History() {
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [renaming, setRenaming] = useState<TranscriptSummary | null>(null)
   const selecting = selected.size > 0
 
   const [offline, setOffline] = useState(false)
@@ -136,6 +138,9 @@ export default function History() {
             <Text style={{ color: t.text, fontWeight: '700', flex: 1 }}>
               {selected.size} sélectionnée{selected.size > 1 ? 's' : ''}
             </Text>
+            {selected.size === 1 && (
+              <Button title="Renommer" variant="secondary" onPress={() => setRenaming((items ?? []).find((i) => selected.has(i.id)) ?? null)} style={{ minHeight: 40, paddingHorizontal: 12 }} />
+            )}
             <Button title="Épingler" variant="secondary" onPress={pinSelected} style={{ minHeight: 40, paddingHorizontal: 12 }} />
             <Button title="Supprimer" variant="danger" onPress={deleteSelected} style={{ minHeight: 40, paddingHorizontal: 12 }} />
             <Button title="Annuler" variant="ghost" onPress={() => setSelected(new Set())} style={{ minHeight: 40, paddingHorizontal: 8 }} />
@@ -185,6 +190,11 @@ export default function History() {
                 <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', flex: 1 }} numberOfLines={1}>
                   {item.filename}
                 </Text>
+                {!selecting && (
+                  <Pressable onPress={() => setRenaming(item)} hitSlop={10} accessibilityLabel={`Renommer ${item.filename}`}>
+                    <Ionicons name="pencil" size={16} color={t.muted} />
+                  </Pressable>
+                )}
               </View>
               {(item.tags ?? []).length > 0 && (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
@@ -214,6 +224,24 @@ export default function History() {
             </Card>
           </Pressable>
         )}
+      />
+      <PromptModal
+        visible={!!renaming}
+        title="Renommer la transcription"
+        initialValue={renaming?.filename ?? ''}
+        onCancel={() => setRenaming(null)}
+        onSubmit={async (value) => {
+          const target = renaming
+          setRenaming(null)
+          if (!target || !value.trim() || value.trim() === target.filename) return
+          try {
+            await renameTranscript(target.id, value.trim())
+            setSelected(new Set())
+            await load()
+          } catch (e) {
+            Alert.alert('Erreur', errorMessage(e))
+          }
+        }}
       />
     </View>
   )
