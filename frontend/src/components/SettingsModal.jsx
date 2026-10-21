@@ -26,12 +26,6 @@ const LANGUAGES = [
     { code: 'ru', label: 'Russian' },
 ];
 
-const AI_MODELS = [
-    { id: 'gpt-4o-mini', label: 'GPT-4o Mini (Fast & Affordable)' },
-    { id: 'gpt-4o', label: 'GPT-4o (Best Quality)' },
-    { id: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-];
-
 const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
     const [activeTab, setActiveTab] = useState('transcription');
     const [loading, setLoading] = useState(false);
@@ -44,9 +38,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
         // AI Chat
         system_prompt_template: '',
         default_user_prompt: '',
-        ai_model: 'gpt-4o-mini',
         response_length: 'medium',
-        temperature: '0.7',
         // Transcription
         default_quality: 'medium',
         default_language: '',
@@ -75,9 +67,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
             setSettings({
                 system_prompt_template: response.data.system_prompt_template || '',
                 default_user_prompt: response.data.default_user_prompt || '',
-                ai_model: response.data.ai_model || 'gpt-4o-mini',
                 response_length: response.data.response_length || 'medium',
-                temperature: response.data.temperature || '0.7',
                 default_quality: response.data.default_quality || 'medium',
                 default_language: response.data.default_language || '',
                 theme: response.data.theme || 'system',
@@ -256,19 +246,6 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                             {activeTab === 'ai' && (
                                 <div className="space-y-6">
                                     <div>
-                                        <label className={labelClass}>AI Model</label>
-                                        <select
-                                            value={settings.ai_model}
-                                            onChange={(e) => updateSetting('ai_model', e.target.value)}
-                                            className={selectClass}
-                                        >
-                                            {AI_MODELS.map(model => (
-                                                <option key={model.id} value={model.id}>{model.label}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div>
                                         <label className={labelClass}>Response Length</label>
                                         <div className="flex gap-2 mt-2">
                                             {['short', 'medium', 'detailed'].map(len => (
@@ -284,23 +261,6 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                                     {len.charAt(0).toUpperCase() + len.slice(1)}
                                                 </button>
                                             ))}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className={labelClass}>Temperature (Creativity): {settings.temperature}</label>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="1"
-                                            step="0.1"
-                                            value={settings.temperature}
-                                            onChange={(e) => updateSetting('temperature', e.target.value)}
-                                            className="w-full mt-2"
-                                        />
-                                        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                            <span>Precise</span>
-                                            <span>Creative</span>
                                         </div>
                                     </div>
 

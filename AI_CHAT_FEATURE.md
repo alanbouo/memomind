@@ -2,7 +2,7 @@
 
 ## Overview
 
-The AI Chat feature allows you to have intelligent conversations about your audio transcripts using OpenAI's GPT models. Ask questions, get summaries, extract insights, and analyze your transcripts conversationally.
+The AI Chat feature allows you to have intelligent conversations about your audio transcripts using Anthropic's Claude models. Ask questions, get summaries, extract insights, and analyze your transcripts conversationally.
 
 ## Features
 
@@ -20,11 +20,11 @@ The AI Chat feature allows you to have intelligent conversations about your audi
 pip install -r requirements.txt
 ```
 
-New dependency added: `openai>=1.0.0`
+New dependency added: `anthropic>=1.0.0`
 
-### 2. Get OpenAI API Key
+### 2. Get an Anthropic API Key
 
-1. Go to [OpenAI Platform](https://platform.openai.com/)
+1. Go to [Anthropic Console](https://console.anthropic.com/)
 2. Sign up or log in
 3. Navigate to API Keys section
 4. Create a new API key
@@ -35,7 +35,8 @@ New dependency added: `openai>=1.0.0`
 Add to your `.env` file:
 
 ```bash
-OPENAI_API_KEY=sk-your-api-key-here
+ANTHROPIC_API_KEY=sk-ant-your-api-key-here
+# Optional: CHAT_MODEL=claude-haiku-5-5 for a cheaper, faster chat (default: claude-sonnet-5-5)
 ```
 
 ### 4. Database Migration
@@ -161,7 +162,7 @@ Enhanced with:
 
 ## Cost Considerations
 
-### OpenAI Pricing (as of 2024)
+### Anthropic Pricing (as of 2024)
 
 **GPT-4o-mini** (default model):
 - Input: $0.150 / 1M tokens
@@ -182,7 +183,7 @@ For a 1000-word transcript (~1500 tokens):
 1. **Use GPT-4o-mini** (default): 200x cheaper than GPT-4
 2. **Limit chat history**: Currently limited to last 20 messages
 3. **Set max_tokens**: Limited to 1000 tokens per response
-4. **Monitor usage**: Check OpenAI dashboard regularly
+4. **Monitor usage**: Check Anthropic dashboard regularly
 
 ## Changing AI Model
 
@@ -205,9 +206,9 @@ Available models:
 
 ## Troubleshooting
 
-### "OPENAI_API_KEY not configured"
+### "ANTHROPIC_API_KEY not configured"
 
-**Solution**: Add `OPENAI_API_KEY` to your `.env` file
+**Solution**: Add `ANTHROPIC_API_KEY` to your `.env` file
 
 ### "Transcript not found"
 
@@ -226,7 +227,7 @@ Available models:
 ### Rate limit errors
 
 **Solution**:
-- OpenAI has rate limits (3 requests/min for free tier)
+- Anthropic has rate limits (3 requests/min for free tier)
 - Upgrade to paid tier for higher limits
 - Add retry logic with exponential backoff
 
@@ -234,7 +235,7 @@ Available models:
 
 1. **API Key Protection**: Never commit `.env` file to git
 2. **User Isolation**: Users can only chat with their own transcripts
-3. **Input Validation**: Messages are validated before sending to OpenAI
+3. **Input Validation**: Messages are validated before sending to Anthropic
 4. **Token Limits**: Max tokens prevent excessive API costs
 
 ## Production Deployment
@@ -244,7 +245,7 @@ Available models:
 Add to Coolify/production:
 
 ```bash
-OPENAI_API_KEY=sk-your-production-key
+ANTHROPIC_API_KEY=sk-ant-your-production-key
 ```
 
 ### Database
@@ -258,7 +259,7 @@ DATABASE_URL=postgresql://user:pass@host:5432/db
 ### Monitoring
 
 Monitor:
-- OpenAI API usage in dashboard
+- Anthropic API usage in dashboard
 - Database size (chat history grows over time)
 - Response times
 - Error rates
@@ -313,7 +314,7 @@ For issues or questions:
 1. Check logs: `docker-compose logs backend`
 2. Verify environment variables
 3. Test API endpoints directly
-4. Check OpenAI status page
+4. Check Anthropic status page
 
 ## License
 

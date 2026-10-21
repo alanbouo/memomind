@@ -23,7 +23,7 @@ import {
   getUtterances,
   renameTranscript,
   updateTranscript,
-  sendChatMessage,
+  streamChatMessage,
   updateSpeakerMapping,
   TranscriptStatus,
   TranscriptSummary,
@@ -358,9 +358,10 @@ export default function TranscriptScreen() {
         <ChatPanel
           loadHistory={loadHistory}
           autoPrompt={autoPrompt}
-          send={async (m) => {
+          bottomInset={insets.bottom}
+          send={async (m, ctx) => {
             if (!(await ensure())) throw new Error(CONSENT_DECLINED)
-            return (await sendChatMessage(id, m)).content
+            return streamChatMessage(id, m, ctx.onText, { regenerate: ctx.regenerate, signal: ctx.signal })
           }}
           onClear={async () => {
             await clearChatHistory(id)

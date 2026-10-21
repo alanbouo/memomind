@@ -179,6 +179,56 @@ export const sendChatMessage = async (transcriptId, message) => {
   return response.data
 }
 
+// Streams the answer: calls onText with each piece, resolves with the full text.
+// Falls back to a single request when the server has no streaming endpoint yet.
+export const streamChatMessage = async (transcriptId, message, onText, { regenerate = false, signal } = {}) => {
+  await api.get('/me') // refreshes an expired token through the interceptor
+  const response = await fetch(`${API_BASE_URL}/chat/${transcriptId}/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ message, regenerate }),
+    signal,
+  })
+  if (response.status === 404 || response.status === 405) {
+    const reply = (await sendChatMessage(transcriptId, message)).content
+    onText(reply)
+    return reply
+  }
+  if (!response.ok || !response.body) {
+    let detail = ''
+    try {
+      detail = (await response.json()).detail
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(detail || 'Failed to send message')
+  }
+
+  // Newline-delimited JSON: {"t": text} chunks, then {"done": true} or {"error": ...}
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let full = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let newline
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline).trim()
+      buffer = buffer.slice(newline + 1)
+      if (!line) continue
+      const event = JSON.parse(line)
+      if (event.error) throw new Error(event.error)
+      if (event.t) {
+        full += event.t
+        onText(event.t)
+      }
+    }
+  }
+  return full
+}
+
 export const getChatHistory = async (transcriptId) => {
   const response = await api.get(`/chat/${transcriptId}/history`)
   return response.data

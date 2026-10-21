@@ -99,7 +99,7 @@ function Legal() {
                 <p className="text-gray-600 mb-4">We use the following third-party services to provide our functionality:</p>
                 <ul className="list-disc list-inside text-gray-600 space-y-2 mb-4">
                   <li><strong>AssemblyAI:</strong> For audio transcription processing</li>
-                  <li><strong>OpenAI:</strong> For AI chat functionality</li>
+                  <li><strong>Anthropic:</strong> For AI chat functionality</li>
                 </ul>
                 <p className="text-gray-600">
                   These services process your data according to their respective privacy policies. Audio sent for transcription is subject to AssemblyAI's data handling practices.

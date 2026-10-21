@@ -47,9 +47,11 @@ export default function Guest() {
         <UtteranceList utterances={guestResult.utterances} showTimestamps />
       ) : (
         <ChatPanel
-          send={async (m) => {
+          send={async (m, ctx) => {
             if (!(await ensure())) throw new Error(CONSENT_DECLINED)
-            return (await sendChatMessageGuest(m, guestResult.text)).response
+            const reply = (await sendChatMessageGuest(m, guestResult.text)).response
+            ctx.onText(reply)
+            return reply
           }}
         />
       )}

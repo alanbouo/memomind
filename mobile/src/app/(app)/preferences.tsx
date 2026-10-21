@@ -190,7 +190,7 @@ export default function Preferences() {
         <Text style={{ color: t.text, fontWeight: '700', marginBottom: 4 }}>Services d&apos;IA</Text>
         <Muted style={{ marginBottom: 12 }}>
           {consentAt
-            ? "Vous avez accepté que l'audio soit transcrit par AssemblyAI et que le texte et vos messages soient traités par OpenAI (chat)."
+            ? "Vous avez accepté que l'audio soit transcrit par AssemblyAI et que le texte et vos messages soient traités par Anthropic (chat)."
             : "Vous n'avez pas encore donné votre accord. Il vous sera demandé avant la première transcription."}
         </Muted>
         {consentAt && (

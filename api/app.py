@@ -5,7 +5,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from fastapi import BackgroundTasks, FastAPI, UploadFile, File, Form, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import Optional
@@ -34,7 +34,7 @@ from api.auth import (
     create_refresh_token,
     decode_token
 )
-import openai
+from api import llm
 import json
 import jwt
 
@@ -518,33 +518,18 @@ async def chat_with_transcript_guest(
     Guest chat endpoint - uses default prompts only.
     Transcript text must be provided since guests have no saved transcripts.
     """
-    openai_key = os.getenv("OPENAI_API_KEY")
-    if not openai_key:
-        return JSONResponse(status_code=500, content={"error": "OpenAI API key not configured"})
-
-    # Default system prompt for guests
-    system_prompt = "You are a helpful assistant. Here is the transcript: {transcript}"
-    
-    client = openai.OpenAI(api_key=openai_key)
-    
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt.replace("{transcript}", transcript_text)},
-                {"role": "user", "content": message}
-            ],
-            max_tokens=1000,
-            temperature=0.7
+        ai_response = llm.reply(
+            llm.system_blocks(transcript_text),
+            [{"role": "user", "content": message}],
         )
-        
-        ai_response = response.choices[0].message.content
-        
         return {
             "response": ai_response,
             "is_guest": True,
             "upgrade_message": "Create an account to save chat history and customize AI prompts!"
         }
+    except llm.ChatNotConfigured:
+        return JSONResponse(status_code=500, content={"error": "AI chat is not configured"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -839,6 +824,8 @@ def get_transcript(
 
 class ChatRequest(BaseModel):
     message: str
+    # Ask the same question again: the previous answer (and question) are dropped first.
+    regenerate: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -1024,6 +1011,61 @@ async def update_speaker_mapping(
     return {"status": "success", "display_name": speaker_update.display_name}
 
 
+def _chat_context(db: Session, user: str, transcript_id: int, message: str, regenerate: bool = False):
+    """Save the user's message and build what the model needs: (system blocks, messages)."""
+    db_user = get_user_by_email(db, user)
+    transcript = db.query(Transcript).filter(
+        Transcript.id == transcript_id,
+        Transcript.user_id == db_user.id
+    ).first()
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    if regenerate:
+        last = db.query(ChatMessage).filter(ChatMessage.transcript_id == transcript_id).order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(2).all()
+        # Drop the last answer and the question it answered.
+        if len(last) == 2 and last[0].role == "assistant" and last[1].role == "user":
+            for m in last:
+                db.delete(m)
+            db.commit()
+
+    # The most recent turns, oldest first (the new message is the last one).
+    db.add(ChatMessage(transcript_id=transcript_id, role="user", content=message))
+    db.commit()
+    recent = db.query(ChatMessage).filter(
+        ChatMessage.transcript_id == transcript_id
+    ).order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(20).all()
+    history = llm.clean_history([{"role": m.role, "content": m.content} for m in reversed(recent)])
+
+    # Show speakers under the names the user gave them.
+    transcript_text = transcript.text_content or ""
+    for mapping in db.query(SpeakerMapping).filter(SpeakerMapping.transcript_id == transcript_id).all():
+        # Only at the start of a line, so the same words inside speech are left alone.
+        pattern = re.compile(r'^' + re.escape(mapping.original_label) + r':', flags=re.MULTILINE)
+        transcript_text = pattern.sub(mapping.display_name + ':', transcript_text)
+
+    settings = db_user.settings
+    system = llm.system_blocks(
+        transcript_text,
+        template=(settings.system_prompt_template if settings else "") or "",
+        length=(settings.response_length if settings else "medium") or "medium",
+    )
+    return system, history
+
+
+def _save_reply(transcript_id: int, content: str) -> ChatMessage:
+    """Store the assistant's answer with a session of its own (streams outlive the request's)."""
+    session = SessionLocal()
+    try:
+        row = ChatMessage(transcript_id=transcript_id, role="assistant", content=content)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+    finally:
+        session.close()
+
+
 @app.post("/chat/{transcript_id}", response_model=ChatResponse)
 async def chat_with_transcript(
     transcript_id: int,
@@ -1031,127 +1073,54 @@ async def chat_with_transcript(
     user: str = Depends(authenticate_token),
     db: Session = Depends(get_db)
 ):
-    """Send a chat message and get AI response about the transcript"""
-    # Get OpenAI API key
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="OPENAI_API_KEY not configured. Please add it to your environment variables."
-        )
-    
-    # Verify transcript belongs to user
-    db_user = get_user_by_email(db, user)
-    transcript = db.query(Transcript).filter(
-        Transcript.id == transcript_id,
-        Transcript.user_id == db_user.id
-    ).first()
-    
-    if not transcript:
-        raise HTTPException(status_code=404, detail="Transcript not found")
-    
-    # Save user message
-    user_message = ChatMessage(
-        transcript_id=transcript_id,
-        role="user",
-        content=chat_request.message
-    )
-    db.add(user_message)
-    db.commit()
-    
-    # Get chat history
-    chat_history = db.query(ChatMessage).filter(
-        ChatMessage.transcript_id == transcript_id
-    ).order_by(ChatMessage.created_at).limit(20).all()
-    
-    # Apply speaker mappings to transcript
-    transcript_text = transcript.text_content
-    speaker_mappings = db.query(SpeakerMapping).filter(
-        SpeakerMapping.transcript_id == transcript_id
-    ).all()
-    
-    print(f"🔍 Found {len(speaker_mappings)} speaker mappings")
-    for mapping in speaker_mappings:
-        print(f"🔍 Mapping: '{mapping.original_label}' → '{mapping.display_name}'")
-        # Replace original speaker labels with custom names (only at start of lines with colon)
-        # This ensures we don't replace speaker labels that appear in the text itself
-        pattern = re.compile(r'^' + re.escape(mapping.original_label) + r':', flags=re.MULTILINE)
-        before_count = len(transcript_text)
-        transcript_text = pattern.sub(mapping.display_name + ':', transcript_text)
-        after_count = len(transcript_text)
-        if before_count != after_count:
-            print(f"✅ Replaced '{mapping.original_label}' with '{mapping.display_name}'")
-        else:
-            print(f"⚠️  No matches found for pattern '^{mapping.original_label}:'")
-            # Show first 200 chars of transcript for debugging
-            print(f"   First 200 chars: {transcript_text[:200]}")
-    
-    # Get user settings for custom prompt
-    system_prompt = f"You are a helpful assistant analyzing an audio transcript. Here is the full transcript:\n\n{transcript_text}\n\nAnswer questions about this transcript accurately and concisely."
-    
-    if db_user.settings and db_user.settings.system_prompt_template:
-        # Inject transcript into template
-        template = db_user.settings.system_prompt_template
-        # Replace {transcript} placeholder, or append if not present
-        if "{transcript}" in template:
-            system_prompt = template.replace("{transcript}", transcript_text)
-        else:
-            system_prompt = f"{template}\n\n[TRANSCRIPT]:\n{transcript_text}"
-
-    # Build messages for OpenAI
-    messages = [
-        {
-            "role": "system",
-            "content": system_prompt
-        }
-    ]
-    
-    # Add chat history (excluding the current message since it's already in the prompt)
-    for msg in chat_history[:-1]:  # Exclude last message (the one we just added)
-        messages.append({
-            "role": msg.role,
-            "content": msg.content
-        })
-    
-    # Add current user message
-    messages.append({
-        "role": "user",
-        "content": chat_request.message
-    })
-    
+    """Send a chat message and get the AI's answer about the transcript"""
+    system, history = _chat_context(db, user, transcript_id, chat_request.message, chat_request.regenerate)
     try:
-        # Call OpenAI API
-        client = openai.OpenAI(api_key=openai_api_key)
-        print(f"🤖 Calling OpenAI with {len(messages)} messages...")
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Use gpt-4o-mini for cost-effectiveness, or "gpt-4" for better quality
-            messages=messages,
-            max_tokens=1000,
-            temperature=0.7
-        )
-        
-        ai_response = response.choices[0].message.content
-        print(f"✅ OpenAI response: {ai_response[:100]}...")
-        
-        # Save assistant message
-        assistant_message = ChatMessage(
-            transcript_id=transcript_id,
-            role="assistant",
-            content=ai_response or ""  # Ensure we don't save None
-        )
-        db.add(assistant_message)
-        db.commit()
-        db.refresh(assistant_message)
-        
-        return ChatResponse(
-            content=ai_response or "",
-            role="assistant",
-            created_at=assistant_message.created_at.isoformat()
-        )
-        
+        content = llm.reply(system, history)
+    except llm.ChatNotConfigured as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        print(f"❌ OpenAI API error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+        print(f"❌ Chat error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI error: {e}")
+
+    row = _save_reply(transcript_id, content)
+    return ChatResponse(content=content, role="assistant", created_at=row.created_at.isoformat())
+
+
+@app.post("/chat/{transcript_id}/stream")
+def chat_with_transcript_stream(
+    transcript_id: int,
+    chat_request: ChatRequest,
+    user: str = Depends(authenticate_token),
+    db: Session = Depends(get_db)
+):
+    """Same as POST /chat/{id}, streamed as newline-delimited JSON:
+    {"t": "text"} chunks, then {"done": true, "created_at": ...} or {"error": "..."}."""
+    system, history = _chat_context(db, user, transcript_id, chat_request.message, chat_request.regenerate)
+
+    def events():
+        parts = []
+        try:
+            for chunk in llm.stream_reply(system, history):
+                parts.append(chunk)
+                yield json.dumps({"t": chunk}) + "\n"
+        except llm.ChatNotConfigured as e:
+            yield json.dumps({"error": str(e)}) + "\n"
+            return
+        except Exception as e:
+            print(f"❌ Chat stream error: {e}")
+            yield json.dumps({"error": f"AI error: {e}"}) + "\n"
+            return
+        finally:
+            # A reader that leaves early still keeps what was generated so far.
+            if parts:
+                row = _save_reply(transcript_id, "".join(parts))
+                created = row.created_at.isoformat()
+            else:
+                created = None
+        yield json.dumps({"done": True, "created_at": created}) + "\n"
+
+    return StreamingResponse(events(), media_type="application/x-ndjson", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 @app.get("/chat/{transcript_id}/history")

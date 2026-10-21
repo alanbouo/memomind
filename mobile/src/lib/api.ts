@@ -289,6 +289,63 @@ export const updateSpeakerMapping = (id: number, originalLabel: string, displayN
 export const sendChatMessage = (id: number, message: string) =>
   api.post<ChatMessage>(`/chat/${id}`, { message }, { timeout: 120000 }).then((r) => r.data)
 
+/**
+ * Sends a message and reports the answer as it is generated. Resolves with the full text.
+ * Falls back to a single request when the server has no streaming endpoint yet.
+ */
+export async function streamChatMessage(
+  id: number,
+  message: string,
+  onText: (chunk: string) => void,
+  opts: { regenerate?: boolean; signal?: AbortSignal } = {}
+): Promise<string> {
+  await getCurrentUser() // refreshes an expired token through the axios interceptor
+  const res = await expoFetch(`${API_URL}/chat/${id}/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAccessToken()}` },
+    body: JSON.stringify({ message, regenerate: Boolean(opts.regenerate) }),
+    signal: opts.signal,
+  })
+  if (res.status === 404 || res.status === 405) {
+    const reply = (await sendChatMessage(id, message)).content
+    onText(reply)
+    return reply
+  }
+  if (!res.ok || !res.body) {
+    let detail = ''
+    try {
+      detail = JSON.parse(await res.text()).detail
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(detail || "Le message n'a pas pu être envoyé")
+  }
+
+  // Newline-delimited JSON: {"t": text} chunks, then {"done": true} or {"error": ...}.
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let full = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let nl: number
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim()
+      buffer = buffer.slice(nl + 1)
+      if (!line) continue
+      const event = JSON.parse(line) as { t?: string; error?: string }
+      if (event.error) throw new Error(event.error)
+      if (event.t) {
+        full += event.t
+        onText(event.t)
+      }
+    }
+  }
+  return full
+}
+
 export const getChatHistory = (id: number) => api.get<ChatMessage[]>(`/chat/${id}/history`).then((r) => r.data)
 
 export const clearChatHistory = (id: number) => api.delete(`/chat/${id}/history`)

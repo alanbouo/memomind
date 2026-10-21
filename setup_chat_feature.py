@@ -42,7 +42,7 @@ def main():
         print("🎉 AI Chat Feature setup complete!")
         print()
         print("Next steps:")
-        print("1. Add OPENAI_API_KEY to your .env file")
+        print("1. Add ANTHROPIC_API_KEY to your .env file")
         print("2. Restart your backend server")
         print("3. Upload a new audio file to test the chat feature")
 

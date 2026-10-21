@@ -11,7 +11,7 @@ services:
       - ./.env:/app/.env
     environment:
       - AAI_API_KEY=${AAI_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - APP_USER=${APP_USER}
       - APP_PASS=${APP_PASS}
