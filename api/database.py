@@ -1,7 +1,7 @@
 """
 Database models and setup for user management
 """
-from sqlalchemy import create_engine, inspect, text, Column, Integer, String, DateTime, Boolean, Text, ForeignKey
+from sqlalchemy import create_engine, inspect, text, UniqueConstraint, Column, Integer, String, DateTime, Boolean, Text, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -75,11 +75,25 @@ class Transcript(Base):
     # "completed" or "failed" (with `error`).
     status = Column(String, default="completed", nullable=False)
     error = Column(Text, nullable=True)
+    pinned = Column(Integer, default=0, nullable=False)  # 1 = pinned to the top of the history
     
     # Relationships
     user = relationship("User", back_populates="transcripts")
     chat_messages = relationship("ChatMessage", back_populates="transcript", cascade="all, delete-orphan")
     speaker_mappings = relationship("SpeakerMapping", back_populates="transcript", cascade="all, delete-orphan")
+    tags = relationship("TranscriptTag", back_populates="transcript", cascade="all, delete-orphan", order_by="TranscriptTag.tag")
+
+
+class TranscriptTag(Base):
+    """A free-form label on a transcript (stored lower-case, so "Réunion" and "réunion" are one tag)"""
+    __tablename__ = "transcript_tags"
+    __table_args__ = (UniqueConstraint("transcript_id", "tag"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    transcript_id = Column(Integer, ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False, index=True)
+    tag = Column(String, nullable=False, index=True)
+
+    transcript = relationship("Transcript", back_populates="tags")
 
 
 class ChatMessage(Base):
@@ -169,6 +183,7 @@ class UserSettings(Base):
 _ADDED_COLUMNS = [
     ("transcripts", "status", "VARCHAR NOT NULL DEFAULT 'completed'"),
     ("transcripts", "error", "TEXT"),
+    ("transcripts", "pinned", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

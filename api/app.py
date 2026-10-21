@@ -24,7 +24,7 @@ from scripts.transcribe import transcribe_audio
 from scripts.export import save_transcript_json, save_transcript_txt
 from api import webhooks
 from api.oidc import OIDCError, verify_id_token, verified_email
-from api.database import init_db, get_db, SessionLocal, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, LoginCode
+from api.database import init_db, get_db, SessionLocal, User, Transcript, ChatMessage, SpeakerMapping, UserSettings, LoginCode, TranscriptTag
 from api.emailcode import (
     CODE_TTL_MINUTES, MAX_ATTEMPTS, MAX_CODES_PER_HOUR, RESEND_COOLDOWN_SECONDS,
     codes_match, generate_code, hash_code, send_login_code,
@@ -570,11 +570,15 @@ async def list_transcripts(
     ).update({"status": "failed", "error": "The transcription was interrupted. Please try again."})
     db.commit()
 
-    transcripts = db.query(Transcript).filter(Transcript.user_id == db_user.id).order_by(Transcript.created_at.desc()).all()
+    transcripts = db.query(Transcript).filter(Transcript.user_id == db_user.id).order_by(
+        Transcript.pinned.desc(), Transcript.created_at.desc()
+    ).all()
     
     return [
         {
             "id": t.id,
+            "tags": [tag.tag for tag in t.tags],
+            "pinned": bool(t.pinned),
             "status": t.status or "completed",
             "error": t.error,
             "transcript_id": t.transcript_id,
@@ -605,34 +609,121 @@ def get_transcript_status(
     if row.status == "processing" and row.created_at < datetime.utcnow() - STALE_PROCESSING:
         row.status, row.error = "failed", "The transcription was interrupted. Please try again."
         db.commit()
-    return {"id": row.id, "status": row.status or "completed", "error": row.error, "filename": row.filename}
+    return {
+        "id": row.id,
+        "status": row.status or "completed",
+        "error": row.error,
+        "filename": row.filename,
+        "tags": [t.tag for t in row.tags],
+        "pinned": bool(row.pinned),
+    }
 
 
 class TranscriptUpdate(BaseModel):
-    filename: str
+    filename: Optional[str] = None
+    pinned: Optional[bool] = None
 
 
-@app.patch("/transcripts/{transcript_id}")
-async def rename_transcript(
-    transcript_id: int,
-    update: TranscriptUpdate,
-    user: str = Depends(authenticate_token),
-    db: Session = Depends(get_db)
-):
-    """Rename a transcript"""
+def _owned_transcript(db: Session, user: str, transcript_id: int) -> Transcript:
     db_user = get_user_by_email(db, user)
     transcript = db.query(Transcript).filter(
         Transcript.id == transcript_id,
         Transcript.user_id == db_user.id
     ).first()
-    
     if not transcript:
         raise HTTPException(status_code=404, detail="Transcript not found")
-    
-    transcript.filename = update.filename
+    return transcript
+
+
+@app.patch("/transcripts/{transcript_id}")
+async def update_transcript(
+    transcript_id: int,
+    update: TranscriptUpdate,
+    user: str = Depends(authenticate_token),
+    db: Session = Depends(get_db)
+):
+    """Rename a transcript and/or pin it to the top of the history"""
+    transcript = _owned_transcript(db, user, transcript_id)
+
+    if update.filename is not None:
+        if not update.filename.strip():
+            raise HTTPException(status_code=422, detail="The name can't be empty")
+        transcript.filename = update.filename.strip()
+    if update.pinned is not None:
+        transcript.pinned = 1 if update.pinned else 0
     db.commit()
-    
-    return {"status": "success", "filename": update.filename}
+
+    return {"status": "success", "filename": transcript.filename, "pinned": bool(transcript.pinned)}
+
+
+MAX_TAGS = 20
+MAX_TAG_LENGTH = 30
+
+
+def normalize_tags(tags) -> list:
+    """Trim, collapse spaces, lower-case, drop blanks and duplicates, cap the count."""
+    seen, out = set(), []
+    for raw in tags:
+        tag = " ".join(str(raw).split())[:MAX_TAG_LENGTH].lower()
+        if tag and tag not in seen:
+            seen.add(tag)
+            out.append(tag)
+    return out[:MAX_TAGS]
+
+
+class TagsUpdate(BaseModel):
+    tags: list[str]
+
+
+@app.put("/transcripts/{transcript_id}/tags")
+async def set_transcript_tags(
+    transcript_id: int,
+    data: TagsUpdate,
+    user: str = Depends(authenticate_token),
+    db: Session = Depends(get_db)
+):
+    """Replace the tags of a transcript"""
+    transcript = _owned_transcript(db, user, transcript_id)
+    tags = normalize_tags(data.tags)
+    transcript.tags = [TranscriptTag(tag=tag) for tag in tags]
+    db.commit()
+    return {"tags": tags}
+
+
+@app.get("/tags")
+async def list_tags(
+    user: str = Depends(authenticate_token),
+    db: Session = Depends(get_db)
+):
+    """Every tag the user has used, with how many transcripts carry it (for suggestions)"""
+    db_user = get_user_by_email(db, user)
+    rows = db.query(TranscriptTag.tag, func.count(TranscriptTag.id)).join(
+        Transcript, Transcript.id == TranscriptTag.transcript_id
+    ).filter(Transcript.user_id == db_user.id).group_by(TranscriptTag.tag).all()
+    return sorted(({"tag": tag, "count": count} for tag, count in rows), key=lambda r: (-r["count"], r["tag"]))
+
+
+class BulkDelete(BaseModel):
+    ids: list[int]
+
+
+@app.post("/transcripts/delete")
+async def delete_transcripts(
+    data: BulkDelete,
+    user: str = Depends(authenticate_token),
+    db: Session = Depends(get_db)
+):
+    """Delete several transcripts at once (ids that aren't the user's are ignored)"""
+    db_user = get_user_by_email(db, user)
+    owned = db.query(Transcript).filter(
+        Transcript.user_id == db_user.id, Transcript.id.in_(data.ids)
+    ).all()
+    for transcript in owned:
+        db.query(ChatMessage).filter(ChatMessage.transcript_id == transcript.id).delete()
+        db.query(SpeakerMapping).filter(SpeakerMapping.transcript_id == transcript.id).delete()
+        db.delete(transcript)  # tags go with it (cascade)
+    db.commit()
+    return {"deleted": len(owned)}
 
 
 @app.delete("/transcripts/{transcript_id}")
@@ -1156,6 +1247,7 @@ async def export_all_data(
                 {
                     "id": t.id,
                     "filename": t.filename,
+                    "tags": [tag.tag for tag in t.tags],
                     "created_at": t.created_at.isoformat()
                 }
                 for t in transcripts
