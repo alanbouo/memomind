@@ -34,7 +34,7 @@ function Legal() {
         <div className="max-w-3xl mx-auto">
           <div className="bg-white rounded-xl shadow-sm p-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Privacy Policy</h1>
-            <p className="text-sm text-gray-500 mb-8">Last updated: November 2025</p>
+            <p className="text-sm text-gray-500 mb-8">Last updated: October 2026</p>
 
             <div className="prose prose-gray max-w-none">
               <section className="mb-8">
@@ -59,6 +59,9 @@ function Legal() {
                   <li>Any temporary copies created during processing are also deleted</li>
                   <li>We have no ability to recover or access your audio after deletion</li>
                 </ul>
+                <p className="text-gray-600 mb-4">
+                  During transcription the audio is sent to AssemblyAI (see Third-Party Services). In the mobile app, recordings you make can also be kept on your own device, and only there: they are never uploaded except when you choose to transcribe them, and you can turn this off or delete them at any time in the app.
+                </p>
               </section>
 
               <section className="mb-8">
@@ -66,16 +69,23 @@ function Legal() {
                 
                 <h3 className="text-lg font-medium text-gray-800 mt-4 mb-2">For Registered Users</h3>
                 <ul className="list-disc list-inside text-gray-600 space-y-2 mb-4">
-                  <li><strong>Account information:</strong> Email address and encrypted password</li>
-                  <li><strong>Transcripts:</strong> Text content of your transcriptions (not audio)</li>
+                  <li><strong>Account information:</strong> Your email address. You sign in with a one-time code sent to that address, or with Google or Apple; we do not receive a Google or Apple password, only the verified email address.</li>
+                  <li><strong>Transcripts:</strong> Text content of your transcriptions (not audio), with their title, AI-generated summary, tags and speaker names</li>
                   <li><strong>Chat history:</strong> Your conversations with the AI about transcripts</li>
                   <li><strong>Settings:</strong> Your preferences and customizations</li>
+                  <li><strong>Notification token:</strong> If you turn on notifications in the mobile app, an identifier of your device used to tell you when a transcription is finished</li>
+                </ul>
+
+                <h3 className="text-lg font-medium text-gray-800 mt-4 mb-2">Stored Only On Your Device</h3>
+                <ul className="list-disc list-inside text-gray-600 space-y-2 mb-4">
+                  <li>Audio recordings you chose to keep, and the markers you placed while recording. They are never synchronized to our servers.</li>
                 </ul>
 
                 <h3 className="text-lg font-medium text-gray-800 mt-4 mb-2">For Guest Users</h3>
                 <ul className="list-disc list-inside text-gray-600 space-y-2 mb-4">
-                  <li>No personal information is collected</li>
-                  <li>Transcripts are not stored after your session ends</li>
+                  <li>No account and no personal information is collected</li>
+                  <li>Your audio is sent to AssemblyAI to be transcribed, and your messages and the transcript text to Anthropic if you use the chat; we do not store the transcript</li>
+                  <li>Transcripts are not stored after your session ends, unless you create an account right after: the transcript you just made is then saved to your new account</li>
                   <li>No cookies or tracking beyond essential functionality</li>
                 </ul>
               </section>
@@ -87,6 +97,8 @@ function Legal() {
                   <li>Provide the transcription service</li>
                   <li>Save your transcripts for future access (registered users only)</li>
                   <li>Enable AI chat functionality about your transcripts</li>
+                  <li>Give your transcripts a title and a short summary (you can turn this off in your settings)</li>
+                  <li>Send you a sign-in code, and a notification when a transcription is finished if you enabled them</li>
                   <li>Maintain and improve our service</li>
                 </ul>
                 <p className="text-gray-600">
@@ -99,10 +111,13 @@ function Legal() {
                 <p className="text-gray-600 mb-4">We use the following third-party services to provide our functionality:</p>
                 <ul className="list-disc list-inside text-gray-600 space-y-2 mb-4">
                   <li><strong>AssemblyAI:</strong> For audio transcription processing</li>
-                  <li><strong>Anthropic:</strong> For AI chat functionality</li>
+                  <li><strong>Anthropic:</strong> For the AI chat, and for the automatic title and summary. The transcript text and your chat messages are sent to it.</li>
+                  <li><strong>Resend:</strong> To email you your sign-in code. It receives your email address.</li>
+                  <li><strong>Google and Apple:</strong> If you choose to sign in with them, to verify your identity.</li>
+                  <li><strong>Expo, Apple and Google push services:</strong> To deliver notifications to your device. They receive your device token and the notification text, which includes the name of the transcript.</li>
                 </ul>
                 <p className="text-gray-600">
-                  These services process your data according to their respective privacy policies. Audio sent for transcription is subject to AssemblyAI's data handling practices.
+                  These services process your data according to their respective privacy policies. Audio sent for transcription is subject to AssemblyAI's data handling practices. The mobile app asks for your consent before your audio or text is first sent to an AI service, and you can withdraw it in the app's preferences.
                 </p>
               </section>
 
@@ -111,7 +126,7 @@ function Legal() {
                 <p className="text-gray-600 mb-4">We implement appropriate security measures including:</p>
                 <ul className="list-disc list-inside text-gray-600 space-y-2 mb-4">
                   <li>Encrypted data transmission (HTTPS)</li>
-                  <li>Secure password hashing</li>
+                  <li>Short-lived, single-use sign-in codes, stored only in hashed form</li>
                   <li>JWT-based authentication</li>
                   <li>Regular security updates</li>
                 </ul>
@@ -124,7 +139,8 @@ function Legal() {
                   <li><strong>Access:</strong> View all your stored data</li>
                   <li><strong>Export:</strong> Download all your transcripts</li>
                   <li><strong>Delete:</strong> Permanently delete your account and all associated data</li>
-                  <li><strong>Modify:</strong> Update your account information</li>
+                  <li><strong>Modify:</strong> Rename your transcripts and speakers, and change your settings</li>
+                  <li><strong>Withdraw consent:</strong> Stop AI processing and notifications from the app's preferences</li>
                 </ul>
                 <p className="text-gray-600">
                   These options are available in your account settings.
@@ -135,7 +151,9 @@ function Legal() {
                 <h2 className="text-xl font-semibold text-gray-900 mb-3">Data Retention</h2>
                 <ul className="list-disc list-inside text-gray-600 space-y-2 mb-4">
                   <li><strong>Audio files:</strong> Deleted immediately after processing</li>
-                  <li><strong>Transcripts:</strong> Retained until you delete them or your account</li>
+                  <li><strong>Transcripts, summaries and chat history:</strong> Retained until you delete them or your account</li>
+                  <li><strong>Notification token:</strong> Retained until you turn notifications off, sign out, or delete your account</li>
+                  <li><strong>Sign-in codes:</strong> Valid for a few minutes, then unusable</li>
                   <li><strong>Account data:</strong> Retained until you delete your account</li>
                 </ul>
               </section>
@@ -168,7 +186,7 @@ function Legal() {
             <div className="flex items-center gap-2">
               <span className="font-medium text-gray-700">MemoMind</span>
               <span>|</span>
-              <span>© 2025 <a href="https://alanbouo.com" className="text-blue-600 hover:underline">alanbouo.com</a></span>
+              <span>© 2026 <a href="https://alanbouo.com" className="text-blue-600 hover:underline">alanbouo.com</a></span>
             </div>
             <div className="flex items-center gap-4">
               <a href="https://alanbouo.com/about" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">About</a>
