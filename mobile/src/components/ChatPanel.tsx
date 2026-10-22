@@ -179,7 +179,7 @@ export function ChatPanel({ loadHistory, send, onClear, autoPrompt, bottomInset 
       {onClear && messages.length > 0 && !sending && (
         <Pressable onPress={confirmClear} hitSlop={8} accessibilityLabel="Effacer la conversation" style={styles.clear}>
           <Ionicons name="trash-outline" size={15} color={t.muted} />
-          <Text style={{ color: t.muted, fontSize: 13 }}>Nouvelle conversation</Text>
+          <Text style={{ color: t.muted, fontSize: 13 }}>Effacer la conversation</Text>
         </Pressable>
       )}
       <FlatList

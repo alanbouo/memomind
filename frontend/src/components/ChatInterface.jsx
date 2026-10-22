@@ -124,7 +124,7 @@ function ChatInterface({ transcriptId }) {
   }
 
   const handleClearHistory = async () => {
-    if (!confirm('Start a new conversation? The current messages will be deleted.')) return
+    if (!confirm('Clear this conversation? The messages will be deleted.')) return
     try {
       await clearChatHistory(transcriptId)
       setMessages([])
@@ -148,10 +148,10 @@ function ChatInterface({ transcriptId }) {
           <button
             onClick={handleClearHistory}
             className="text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1"
-            title="Start a new conversation"
+            title="Clear the conversation"
           >
             <Trash2 className="w-4 h-4" />
-            New conversation
+            Clear conversation
           </button>
         )}
       </div>
