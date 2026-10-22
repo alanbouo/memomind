@@ -1,11 +1,12 @@
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Ionicons } from '@expo/vector-icons'
-import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Alert, FlatList, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native'
 import { PromptModal } from '../../components/PromptModal'
+import { SwipeRow, SwipeRowHandle } from '../../components/SwipeRow'
 import { TagChip } from '../../components/Tags'
 import { Button, Card, ErrorText, Muted } from '../../components/ui'
-import { deleteTranscripts, errorMessage, getUtterances, listTranscripts, renameTranscript, TranscriptSummary, updateTranscript } from '../../lib/api'
+import { deleteTranscripts, errorMessage, getTranscriptText, getUtterances, listTranscripts, renameTranscript, TranscriptSummary, updateTranscript } from '../../lib/api'
 import { cached, readCached } from '../../lib/cache'
 import { onTranscriptionsCompleted } from '../../lib/recordings'
 import { formatDateTime } from '../../lib/dates'
@@ -30,6 +31,15 @@ const excerpt = (content: string, q: string) => {
   return (start > 0 ? '…' : '') + content.slice(start, i + q.length + 80).replace(/\s+/g, ' ') + '…'
 }
 
+function SwipeAction({ icon, label, color, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; color: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityLabel={label} style={{ flex: 1, borderRadius: 16, backgroundColor: color, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+      <Ionicons name={icon} size={22} color="#fff" />
+      <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{label}</Text>
+    </Pressable>
+  )
+}
+
 export default function History() {
   const t = useTheme()
   const [items, setItems] = useState<TranscriptSummary[] | null>(null)
@@ -37,12 +47,14 @@ export default function History() {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [renaming, setRenaming] = useState<TranscriptSummary | null>(null)
   const selecting = selected.size > 0
 
   const [offline, setOffline] = useState(false)
   const processing = useRef(false)
+  const rows = useRef(new Map<number, SwipeRowHandle | null>())
 
   const load = useCallback(async () => {
     try {
@@ -84,11 +96,48 @@ export default function History() {
     () =>
       (items ?? []).filter(
         (i) =>
+          Boolean(i.archived) === showArchived &&
           (!activeTag || (i.tags ?? []).includes(activeTag)) &&
           (!q || `${i.filename} ${i.content} ${(i.tags ?? []).join(' ')}`.toLowerCase().includes(q.toLowerCase()))
       ),
-    [items, q, activeTag]
+    [items, q, activeTag, showArchived]
   )
+
+  const hasArchived = (items ?? []).some((i) => i.archived)
+
+  const archive = async (item: TranscriptSummary) => {
+    try {
+      await updateTranscript(item.id, { archived: !item.archived })
+      await load()
+    } catch (e) {
+      Alert.alert('Erreur', errorMessage(e))
+    }
+  }
+
+  const share = async (item: TranscriptSummary) => {
+    try {
+      await Share.share({ message: await getTranscriptText(item.id, true), title: item.filename })
+    } catch (e) {
+      Alert.alert('Erreur', errorMessage(e))
+    }
+  }
+
+  const deleteOne = (item: TranscriptSummary) =>
+    Alert.alert(`Supprimer « ${item.filename} » ?`, 'Cette action est irréversible.', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteTranscripts([item.id])
+            await load()
+          } catch (e) {
+            Alert.alert('Erreur', errorMessage(e))
+          }
+        },
+      },
+    ])
 
   const toggleSelected = (id: number) =>
     setSelected((prev) => {
@@ -157,8 +206,9 @@ export default function History() {
             style={{ minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: t.border, backgroundColor: t.card, color: t.text, paddingHorizontal: 14, fontSize: 16 }}
           />
         )}
-        {allTags.length > 0 && !selecting && (
+        {(allTags.length > 0 || hasArchived) && !selecting && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+            {hasArchived && <TagChip tag={showArchived ? 'retour' : 'archivées'} active={showArchived} onPress={() => setShowArchived((v) => !v)} />}
             <TagChip tag="tous" active={!activeTag} onPress={() => setTagFilter(null)} />
             {allTags.map((tag) => (
               <TagChip key={tag} tag={tag} active={activeTag === tag} onPress={() => setTagFilter(activeTag === tag ? null : tag)} />
@@ -178,9 +228,44 @@ export default function History() {
           await load()
           setRefreshing(false)
         }}
-        ListEmptyComponent={<Muted style={{ textAlign: 'center', marginTop: 40 }}>{q || activeTag ? 'Aucun résultat.' : 'Aucune transcription pour le moment.'}</Muted>}
-        extraData={selected}
+        ListEmptyComponent={<Muted style={{ textAlign: 'center', marginTop: 40 }}>{q || activeTag ? 'Aucun résultat.' : showArchived ? 'Aucune transcription archivée.' : 'Aucune transcription pour le moment.'}</Muted>}
+        extraData={[selected, showArchived]}
         renderItem={({ item }) => (
+          <SwipeRow
+            ref={(r) => void rows.current.set(item.id, r)}
+            enabled={!selecting}
+            leftColor={t.muted}
+            rightColor={t.danger}
+            onFullLeft={() => archive(item)}
+            onFullRight={() => deleteOne(item)}
+            leftWidth={176}
+            rightWidth={84}
+            left={
+              <View style={{ flex: 1, flexDirection: 'row', gap: 8 }}>
+                <SwipeAction
+                  icon="share-outline"
+                  label="Partager"
+                  color={t.primary}
+                  onPress={() => {
+                    rows.current.get(item.id)?.close()
+                    share(item)
+                  }}
+                />
+                <SwipeAction icon={item.archived ? 'arrow-undo-outline' : 'archive-outline'} label={item.archived ? 'Désarchiver' : 'Archiver'} color={t.muted} onPress={() => archive(item)} />
+              </View>
+            }
+            right={
+              <SwipeAction
+                icon="trash-outline"
+                label="Supprimer"
+                color={t.danger}
+                onPress={() => {
+                  rows.current.get(item.id)?.close()
+                  deleteOne(item)
+                }}
+              />
+            }
+          >
           <Pressable
             onPress={() => (selecting ? toggleSelected(item.id) : router.push({ pathname: '/transcript/[id]', params: { id: String(item.id) } }))}
             onLongPress={() => toggleSelected(item.id)}
@@ -220,6 +305,7 @@ export default function History() {
               )}
             </Card>
           </Pressable>
+          </SwipeRow>
         )}
       />
       <PromptModal

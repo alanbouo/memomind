@@ -652,6 +652,7 @@ async def list_transcripts(
             "id": t.id,
             "tags": [tag.tag for tag in t.tags],
             "pinned": bool(t.pinned),
+            "archived": bool(t.archived),
             "summary": t.summary,
             "status": t.status or "completed",
             "error": t.error,
@@ -729,6 +730,7 @@ def generate_transcript_summary(
 class TranscriptUpdate(BaseModel):
     filename: Optional[str] = None
     pinned: Optional[bool] = None
+    archived: Optional[bool] = None
 
 
 def _owned_transcript(db: Session, user: str, transcript_id: int) -> Transcript:
@@ -758,9 +760,13 @@ async def update_transcript(
         transcript.filename = update.filename.strip()
     if update.pinned is not None:
         transcript.pinned = 1 if update.pinned else 0
+    if update.archived is not None:
+        transcript.archived = 1 if update.archived else 0
+        if update.archived:
+            transcript.pinned = 0  # an archived entry has no place at the top
     db.commit()
 
-    return {"status": "success", "filename": transcript.filename, "pinned": bool(transcript.pinned)}
+    return {"status": "success", "filename": transcript.filename, "pinned": bool(transcript.pinned), "archived": bool(transcript.archived)}
 
 
 MAX_TAGS = 20

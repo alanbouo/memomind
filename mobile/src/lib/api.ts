@@ -86,6 +86,7 @@ export interface TranscriptSummary {
   error: string | null
   tags: string[]
   pinned: boolean
+  archived?: boolean
   transcript_id: string
   filename: string
   created_at: string
@@ -283,7 +284,7 @@ export const getUtterances = (id: number) =>
     .get<{ utterances: Utterance[]; speakers: Record<string, string>; summary?: string | null }>(`/transcripts/${id}/utterances`)
     .then((r) => r.data)
 
-export const updateTranscript = (id: number, patch: { filename?: string; pinned?: boolean }) => api.patch(`/transcripts/${id}`, patch)
+export const updateTranscript = (id: number, patch: { filename?: string; pinned?: boolean; archived?: boolean }) => api.patch(`/transcripts/${id}`, patch)
 
 export const setTranscriptTags = (id: number, tags: string[]) =>
   api.put<{ tags: string[] }>(`/transcripts/${id}/tags`, { tags }).then((r) => r.data.tags)

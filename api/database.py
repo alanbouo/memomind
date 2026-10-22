@@ -77,6 +77,7 @@ class Transcript(Base):
     status = Column(String, default="completed", nullable=False)
     error = Column(Text, nullable=True)
     pinned = Column(Integer, default=0, nullable=False)  # 1 = pinned to the top of the history
+    archived = Column(Integer, default=0, nullable=False)  # 1 = hidden from the main history
     summary = Column(Text, nullable=True)  # short AI summary, written when the transcription completes
     suggested_tags = Column(Text, nullable=True)  # JSON list of tags the AI proposes, until accepted or dismissed
     
@@ -199,6 +200,7 @@ _ADDED_COLUMNS = [
     ("transcripts", "status", "VARCHAR NOT NULL DEFAULT 'completed'"),
     ("transcripts", "error", "TEXT"),
     ("transcripts", "pinned", "INTEGER NOT NULL DEFAULT 0"),
+    ("transcripts", "archived", "INTEGER NOT NULL DEFAULT 0"),
     ("transcripts", "summary", "TEXT"),
     ("transcripts", "suggested_tags", "TEXT"),
     ("user_settings", "auto_summary", "INTEGER NOT NULL DEFAULT 1"),
