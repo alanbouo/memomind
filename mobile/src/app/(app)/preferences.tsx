@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { router, useFocusEffect } from 'expo-router'
 import { Alert, Linking, Platform, Pressable, Share, Switch, Text, View } from 'react-native'
-import { Button, Card, ErrorText, Field, Heading, Muted, Screen } from '../../components/ui'
+import { PromptPicker } from '../../components/PromptPicker'
+import { Button, Card, Heading, Muted, Screen } from '../../components/ui'
 import {
   deleteAccount,
   downloadAccountExport,
   errorMessage,
   getCurrentUser,
+  getPromptPresets,
   getSettings,
   updateSettings,
+  PromptPreset,
 } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { disableNotifications, enableNotifications } from '../../lib/notifications'
@@ -46,8 +49,8 @@ export default function Preferences() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [userPrompt, setUserPrompt] = useState('')
   const [autoSummary, setAutoSummary] = useState(true)
-  const [promptsSaved, setPromptsSaved] = useState(true)
-  const [promptsMsg, setPromptsMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [presets, setPresets] = useState<PromptPreset[]>([])
+  const [presetsFailed, setPresetsFailed] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [keep, setKeep] = useState(() => getLocalPrefs().keepRecordings)
   const [notify, setNotify] = useState(() => getLocalPrefs().pushToken !== undefined)
@@ -60,8 +63,18 @@ export default function Preferences() {
     }, [])
   )
 
+  const loadPresets = useCallback(() => {
+    getPromptPresets()
+      .then((list) => {
+        setPresets(list)
+        setPresetsFailed(false)
+      })
+      .catch(() => setPresetsFailed(true))
+  }, [])
+
   useEffect(() => {
     getCurrentUser().then((u) => setEmail(u.email)).catch(() => {})
+    loadPresets()
     getSettings()
       .then((s) => {
         setLanguage(s.default_language ?? '')
@@ -70,7 +83,7 @@ export default function Preferences() {
         setAutoSummary(s.auto_summary !== false)
       })
       .catch(() => {})
-  }, [])
+  }, [loadPresets])
 
   const pickLanguage = async (code: string) => {
     const previous = language
@@ -83,14 +96,12 @@ export default function Preferences() {
     }
   }
 
-  const savePrompts = async () => {
-    setPromptsMsg(null)
+  // The pickers show the error themselves: only the failure has to reach them.
+  const saveSetting = async (patch: Parameters<typeof updateSettings>[0]) => {
     try {
-      await updateSettings({ system_prompt_template: systemPrompt.trim(), default_user_prompt: userPrompt.trim() })
-      setPromptsSaved(true)
-      setPromptsMsg({ ok: true, text: 'Enregistré' })
+      await updateSettings(patch)
     } catch (e) {
-      setPromptsMsg({ ok: false, text: errorMessage(e) })
+      throw new Error(errorMessage(e))
     }
   }
 
@@ -136,8 +147,6 @@ export default function Preferences() {
         },
       },
     ])
-
-  const inputBox = { minHeight: 110, textAlignVertical: 'top' as const, paddingTop: 12 }
 
   return (
     <Screen>
@@ -254,33 +263,36 @@ export default function Preferences() {
         <Button title="Politique de confidentialité" variant="ghost" onPress={() => Linking.openURL('https://memomind.space/privacy')} style={{ marginTop: 4 }} />
       </Card>
 
-      <SectionTitle>Prompts</SectionTitle>
+      <SectionTitle>Chat IA</SectionTitle>
       <Card style={{ marginBottom: 20 }}>
-        <Field
-          label="Prompt système"
+        <PromptPicker
+          title="Style de l'assistant"
+          description="Comment l'IA répond dans le chat d'une transcription."
+          presets={presets.filter((p) => p.kind === 'system')}
+          defaultLabel="Assistant MemoMind (par défaut)"
+          loadFailed={presetsFailed}
+          onRetry={loadPresets}
           value={systemPrompt}
-          onChangeText={(v) => {
-            setSystemPrompt(v)
-            setPromptsSaved(false)
+          placeholder="Vous êtes un assistant… Utilisez {transcript} pour insérer la transcription (sinon elle est ajoutée à la fin)."
+          onSave={async (text) => {
+            await saveSetting({ system_prompt_template: text })
+            setSystemPrompt(text)
           }}
-          multiline
-          placeholder="Vous êtes un assistant… Utilisez {transcript} pour insérer la transcription."
-          style={inputBox}
         />
-        <Field
-          label="Prompt lancé automatiquement"
+        <PromptPicker
+          title="Question automatique"
+          description="Posée toute seule quand vous ouvrez le chat d'une nouvelle transcription."
+          presets={presets.filter((p) => p.kind === 'auto')}
+          defaultLabel="Aucun (je pose mes questions)"
+          loadFailed={presetsFailed}
+          onRetry={loadPresets}
           value={userPrompt}
-          onChangeText={(v) => {
-            setUserPrompt(v)
-            setPromptsSaved(false)
-          }}
-          multiline
           placeholder="Ex. Résume cette transcription en 5 points."
-          style={inputBox}
+          onSave={async (text) => {
+            await saveSetting({ default_user_prompt: text })
+            setUserPrompt(text)
+          }}
         />
-        <Muted style={{ marginBottom: 12 }}>Le prompt automatique est envoyé dès que vous ouvrez le chat d&apos;une nouvelle transcription.</Muted>
-        {promptsMsg && (promptsMsg.ok ? <Text style={{ color: t.success, marginBottom: 12 }}>{promptsMsg.text}</Text> : <ErrorText>{promptsMsg.text}</ErrorText>)}
-        <Button title="Enregistrer les prompts" variant="secondary" onPress={savePrompts} disabled={promptsSaved} />
       </Card>
 
       <SectionTitle>Compte</SectionTitle>

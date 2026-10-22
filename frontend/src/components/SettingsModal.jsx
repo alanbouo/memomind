@@ -26,8 +26,49 @@ const LANGUAGES = [
     { code: 'ru', label: 'Russian' },
 ];
 
+// A drop-down of ready-made prompts (from the API) with a "Custom" choice that shows a text box.
+// '' is the default: MemoMind's own rules, or no automatic question.
+const PromptSelect = ({ label, description, presets, value, onChange, placeholder, rows, selectClass, inputClass, labelClass, descClass }) => {
+    const [custom, setCustom] = useState(false);
+    const current = presets.find((p) => p.text.trim() === value.trim());
+    const isCustom = custom || (value.trim() !== '' && !current);
+    const selected = isCustom ? '__custom__' : (current ? current.id : presets[0]?.id ?? '');
+
+    const choose = (id) => {
+        if (id === '__custom__') {
+            setCustom(true); // start from the current text, to tweak it
+            return;
+        }
+        setCustom(false);
+        onChange(presets.find((p) => p.id === id).text);
+    };
+
+    return (
+        <div>
+            <label className={labelClass}>{label}</label>
+            <p className={descClass + ' mb-2'}>{description}</p>
+            <select value={selected} onChange={(e) => choose(e.target.value)} className={selectClass}>
+                {presets.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label.en}</option>
+                ))}
+                <option value="__custom__">Custom…</option>
+            </select>
+            {!isCustom && current && <p className={descClass + ' mt-1'}>{current.hint.en}</p>}
+            {isCustom && (
+                <textarea
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    className={`${inputClass} ${rows} font-mono text-sm mt-2`}
+                    placeholder={placeholder}
+                />
+            )}
+        </div>
+    );
+};
+
 const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
     const [activeTab, setActiveTab] = useState('transcription');
+    const [presets, setPresets] = useState([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
@@ -57,6 +98,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
         if (isOpen) {
             fetchSettings();
             fetchUserEmail();
+            api.get('/prompt-presets').then((r) => setPresets(r.data)).catch(() => {});
         }
     }, [isOpen]);
 
@@ -279,29 +321,33 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className={labelClass}>System Prompt Template</label>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                                            Use <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">{'{transcript}'}</code> as placeholder
-                                        </p>
-                                        <textarea
-                                            value={settings.system_prompt_template}
-                                            onChange={(e) => updateSetting('system_prompt_template', e.target.value)}
-                                            className={`${inputClass} h-24 font-mono text-sm`}
-                                            placeholder="You are a helpful assistant..."
-                                        />
-                                    </div>
+                                    <PromptSelect
+                                        label="Assistant style"
+                                        description="How the AI answers in a transcript's chat."
+                                        presets={presets.filter((p) => p.kind === 'system')}
+                                        value={settings.system_prompt_template}
+                                        onChange={(v) => updateSetting('system_prompt_template', v)}
+                                        placeholder="You are a helpful assistant... Use {transcript} where the transcript goes (otherwise it is added at the end)."
+                                        rows="h-32"
+                                        selectClass={inputClass}
+                                        inputClass={inputClass}
+                                        labelClass={labelClass}
+                                        descClass={descClass}
+                                    />
 
-                                    <div>
-                                        <label className={labelClass}>Default User Prompt</label>
-                                        <p className={descClass + ' mb-2'}>Sent automatically as first message</p>
-                                        <textarea
-                                            value={settings.default_user_prompt}
-                                            onChange={(e) => updateSetting('default_user_prompt', e.target.value)}
-                                            className={`${inputClass} h-20 font-mono text-sm`}
-                                            placeholder="Summarize the main points..."
-                                        />
-                                    </div>
+                                    <PromptSelect
+                                        label="Automatic question"
+                                        description="Asked by itself when you open the chat of a new transcript."
+                                        presets={presets.filter((p) => p.kind === 'auto')}
+                                        value={settings.default_user_prompt}
+                                        onChange={(v) => updateSetting('default_user_prompt', v)}
+                                        placeholder="Summarize the main points..."
+                                        rows="h-24"
+                                        selectClass={inputClass}
+                                        inputClass={inputClass}
+                                        labelClass={labelClass}
+                                        descClass={descClass}
+                                    />
                                 </div>
                             )}
 

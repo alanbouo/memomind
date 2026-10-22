@@ -382,6 +382,18 @@ export const sendChatMessageGuest = (message: string, transcriptText: string) =>
 // ---------- Settings / account ----------
 export const getSettings = () => api.get<UserSettings>('/settings').then((r) => r.data)
 
+export interface PromptPreset {
+  id: string
+  kind: 'system' | 'auto'
+  /** '' = the default (MemoMind's own rules, or no automatic question). */
+  text: string
+  label: { fr: string; en: string }
+  hint: { fr: string; en: string }
+}
+
+/** Ready-made chat prompts for the settings. */
+export const getPromptPresets = () => api.get<PromptPreset[]>('/prompt-presets').then((r) => r.data)
+
 export const updateSettings = (patch: Partial<UserSettings>) => api.put('/settings', patch)
 
 export const registerPushToken = (token: string, platform: string) => api.post('/push/register', { token, platform })

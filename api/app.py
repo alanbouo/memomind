@@ -35,6 +35,7 @@ from api.auth import (
     decode_token
 )
 from api import llm, push
+from api.prompts import PRESETS as PROMPT_PRESETS
 import json
 import jwt
 
@@ -788,6 +789,12 @@ async def set_transcript_tags(
     transcript.tags = [TranscriptTag(tag=tag) for tag in tags]
     db.commit()
     return {"tags": tags}
+
+
+@app.get("/prompt-presets")
+async def prompt_presets(user: str = Depends(authenticate_token)):
+    """Ready-made system and automatic prompts for the settings screens"""
+    return PROMPT_PRESETS
 
 
 @app.put("/transcripts/{transcript_id}/suggested-tags")
