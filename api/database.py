@@ -78,6 +78,7 @@ class Transcript(Base):
     error = Column(Text, nullable=True)
     pinned = Column(Integer, default=0, nullable=False)  # 1 = pinned to the top of the history
     summary = Column(Text, nullable=True)  # short AI summary, written when the transcription completes
+    suggested_tags = Column(Text, nullable=True)  # JSON list of tags the AI proposes, until accepted or dismissed
     
     # Relationships
     user = relationship("User", back_populates="transcripts")
@@ -199,6 +200,7 @@ _ADDED_COLUMNS = [
     ("transcripts", "error", "TEXT"),
     ("transcripts", "pinned", "INTEGER NOT NULL DEFAULT 0"),
     ("transcripts", "summary", "TEXT"),
+    ("transcripts", "suggested_tags", "TEXT"),
     ("user_settings", "auto_summary", "INTEGER NOT NULL DEFAULT 1"),
 ]
 

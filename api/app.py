@@ -260,19 +260,44 @@ def _named_transcript_text(row: Transcript) -> str:
     return "\n".join(lines)
 
 
-def _auto_title_and_summary(row: Transcript, original_name: str) -> None:
-    """Give a fresh transcript a title and a summary. Never fails the transcription."""
+def _known_tags(db: Session, user_id: int) -> list:
+    """The user's tags, most used first: the AI reuses them instead of inventing near-duplicates."""
+    rows = db.query(TranscriptTag.tag, func.count(TranscriptTag.id)).join(
+        Transcript, Transcript.id == TranscriptTag.transcript_id
+    ).filter(Transcript.user_id == user_id).group_by(TranscriptTag.tag).all()
+    return [tag for tag, _ in sorted(rows, key=lambda r: (-r[1], r[0]))[:30]]
+
+
+def _store_suggested_tags(row: Transcript, tags) -> None:
+    """Keep the AI's tag proposals that are not already on the transcript."""
+    current = {t.tag for t in row.tags}
+    row.suggested_tags = json.dumps([t for t in normalize_tags(tags) if t not in current][:3])
+
+
+def _suggested_tags(row: Transcript) -> list:
+    """The pending proposals, minus whatever the user has added by hand since."""
+    try:
+        pending = json.loads(row.suggested_tags or "[]")
+    except json.JSONDecodeError:
+        return []
+    current = {t.tag for t in row.tags}
+    return [t for t in pending if t not in current]
+
+
+def _auto_title_and_summary(row: Transcript, original_name: str, db: Session) -> None:
+    """Give a fresh transcript a title, a summary and tag proposals. Never fails the transcription."""
     owner = row.user
     if owner and owner.settings and not owner.settings.auto_summary:
         return
     if not os.getenv("ANTHROPIC_API_KEY") or len(row.text_content or "") < MIN_SUMMARY_CHARS:
         return
     try:
-        result = llm.summarize(row.text_content)
+        result = llm.summarize(row.text_content, _known_tags(db, owner.id) if owner else ())
     except Exception as e:
         print(f"[SUMMARY] Skipped: {e}", flush=True)
         return
     row.summary = result["summary"]
+    _store_suggested_tags(row, result["tags"])
     # Leave a name the user chose while the audio was being processed alone.
     if result["title"] and row.filename == original_name:
         row.filename = result["title"]
@@ -308,7 +333,7 @@ def run_transcription(transcript_pk: int, input_path: Path, quality: str, langua
         original_name = webhook_context.get("filename")
         row.text_content = transcript_text
         row.json_content = json.dumps(job.json_response) if hasattr(job, 'json_response') else None
-        _auto_title_and_summary(row, original_name)
+        _auto_title_and_summary(row, original_name, db)
         row.status = "completed"
         row.error = None
         db.commit()
@@ -662,6 +687,7 @@ def get_transcript_status(
         "tags": [t.tag for t in row.tags],
         "pinned": bool(row.pinned),
         "summary": row.summary,
+        "suggested_tags": _suggested_tags(row),
     }
 
 
@@ -681,14 +707,16 @@ def generate_transcript_summary(
     if row.status != "completed" or len(row.text_content or "") < MIN_SUMMARY_CHARS:
         raise HTTPException(status_code=400, detail="This transcript is too short to summarise")
     try:
-        row.summary = llm.summarize(_named_transcript_text(row))["summary"]
+        result = llm.summarize(_named_transcript_text(row), _known_tags(db, row.user_id))
+        row.summary = result["summary"]
+        _store_suggested_tags(row, result["tags"])
     except llm.ChatNotConfigured as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         print(f"[SUMMARY] Failed: {e}", flush=True)
         raise HTTPException(status_code=502, detail="The summary could not be generated, try again")
     db.commit()
-    return {"summary": row.summary}
+    return {"summary": row.summary, "suggested_tags": _suggested_tags(row)}
 
 
 class TranscriptUpdate(BaseModel):
@@ -760,6 +788,20 @@ async def set_transcript_tags(
     transcript.tags = [TranscriptTag(tag=tag) for tag in tags]
     db.commit()
     return {"tags": tags}
+
+
+@app.put("/transcripts/{transcript_id}/suggested-tags")
+async def set_suggested_tags(
+    transcript_id: int,
+    data: TagsUpdate,
+    user: str = Depends(authenticate_token),
+    db: Session = Depends(get_db)
+):
+    """Replace the pending tag proposals (the client sends what is left after a dismissal)"""
+    transcript = _owned_transcript(db, user, transcript_id)
+    _store_suggested_tags(transcript, data.tags)
+    db.commit()
+    return {"suggested_tags": _suggested_tags(transcript)}
 
 
 @app.get("/tags")
@@ -950,7 +992,7 @@ async def import_transcript(
         json_content=json_content,
         status="completed",
     )
-    _auto_title_and_summary(row, name)
+    _auto_title_and_summary(row, name, db)
     db.add(row)
     db.commit()
     return {"database_id": row.id}

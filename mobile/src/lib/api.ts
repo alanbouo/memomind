@@ -235,6 +235,8 @@ export interface TranscriptStatus {
   tags: string[]
   pinned: boolean
   summary?: string | null
+  /** Tags the AI proposes, until the person accepts or dismisses them. */
+  suggested_tags?: string[]
 }
 
 export const getTranscriptStatus = (id: number) => api.get<TranscriptStatus>(`/transcripts/${id}/status`).then((r) => r.data)
@@ -274,7 +276,7 @@ export const getTranscriptText = (id: number | string, timestamps = false) =>
     .then((r) => r.data)
 
 export const generateSummary = (id: number) =>
-  api.post<{ summary: string }>(`/transcripts/${id}/summary`, undefined, { timeout: 60000 }).then((r) => r.data.summary)
+  api.post<{ summary: string; suggested_tags?: string[] }>(`/transcripts/${id}/summary`, undefined, { timeout: 60000 }).then((r) => r.data)
 
 export const getUtterances = (id: number) =>
   api
@@ -285,6 +287,10 @@ export const updateTranscript = (id: number, patch: { filename?: string; pinned?
 
 export const setTranscriptTags = (id: number, tags: string[]) =>
   api.put<{ tags: string[] }>(`/transcripts/${id}/tags`, { tags }).then((r) => r.data.tags)
+
+/** Replaces the AI's pending tag proposals (what is left after a dismissal). */
+export const setSuggestedTags = (id: number, tags: string[]) =>
+  api.put<{ suggested_tags: string[] }>(`/transcripts/${id}/suggested-tags`, { tags }).then((r) => r.data.suggested_tags)
 
 /** Every tag the user has used, most used first: suggestions while tagging. */
 export const listTags = () => api.get<{ tag: string; count: number }[]>('/tags').then((r) => r.data)

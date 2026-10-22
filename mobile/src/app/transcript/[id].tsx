@@ -58,6 +58,7 @@ export default function TranscriptScreen() {
   const [pinned, setPinned] = useState(false)
   const [summary, setSummary] = useState<string | null>(null)
   const [summarizing, setSummarizing] = useState(false)
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([])
   const [startedAt] = useState(() => Date.now())
   const [now, setNow] = useState(() => Date.now())
 
@@ -145,6 +146,7 @@ export default function TranscriptScreen() {
         if (!alive) return
         setStatus(s)
         setTags(s.tags ?? []) // an API without tags yet omits the field
+        setSuggestedTags(s.suggested_tags ?? [])
         setPinned(Boolean(s.pinned))
         setRecUri(findByTranscript(id)?.uri ?? null)
         setFilename(s.filename)
@@ -181,7 +183,9 @@ export default function TranscriptScreen() {
     setSummarizing(true)
     try {
       if (!(await ensure())) throw new Error(CONSENT_DECLINED)
-      setSummary(await generateSummary(id))
+      const result = await generateSummary(id)
+      setSummary(result.summary)
+      setSuggestedTags(result.suggested_tags ?? [])
       await loadUtterances() // keep the offline copy in step
     } catch (e) {
       Alert.alert('Erreur', errorMessage(e))
@@ -281,7 +285,7 @@ export default function TranscriptScreen() {
 
       {status?.tags !== undefined && (
         <View style={{ marginHorizontal: 16, marginTop: 12 }}>
-          <TagEditor transcriptId={id} tags={tags} onChange={setTags} />
+          <TagEditor transcriptId={id} tags={tags} onChange={setTags} suggested={suggestedTags} onSuggestedChange={setSuggestedTags} />
         </View>
       )}
 

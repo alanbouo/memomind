@@ -6,7 +6,7 @@ same transcript only pay for the new turn.
 """
 import json
 import os
-from typing import Iterator, List
+from typing import Iterator, List, Sequence
 
 import anthropic
 
@@ -76,29 +76,35 @@ SUMMARY_SYSTEM = """You write the title and the summary of an audio transcript (
 - Write both in the language of the transcript.
 - title: at most 60 characters, says what it is about, no quotes, no trailing period, no date.
 - summary: 2 to 3 plain sentences (no Markdown, no lists) with the essentials: the subject, the key points or decisions, and who is involved if it matters.
+- tags: 2 to 3 short topic labels (one or two words, lower case, in the language of the transcript), like "budget", "recrutement", "idée produit". Never a person's name or a generic word such as "audio" or "réunion" unless it really is the subject. The user's existing tags are given in <known_tags>: reuse one when it fits rather than inventing a near-duplicate.
 - Speakers are labelled in the transcript, either with a name or with a letter (A, B…). Always refer to a person by name: use the label when it is a name, and otherwise the name the conversation reveals (introductions, being addressed). If a speaker has no known name, describe them by role ("l'interviewé", "le client"), never "Speaker A"."""
 
 SUMMARY_SCHEMA = {
     "type": "object",
-    "properties": {"title": {"type": "string"}, "summary": {"type": "string"}},
-    "required": ["title", "summary"],
+    "properties": {"title": {"type": "string"}, "summary": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}},
+    "required": ["title", "summary", "tags"],
     "additionalProperties": False,
 }
 
 
-def summarize(transcript_text: str) -> dict:
-    """A short title and summary for a transcript: {"title": ..., "summary": ...}."""
+def summarize(transcript_text: str, known_tags: Sequence[str] = ()) -> dict:
+    """A short title, summary and suggested tags for a transcript: {"title", "summary", "tags"}."""
+    known = ", ".join(known_tags)
     response = _client().messages.create(
         model=SUMMARY_MODEL,
         max_tokens=1024,
         system=SUMMARY_SYSTEM,
-        messages=[{"role": "user", "content": f"<transcript>\n{transcript_text}\n</transcript>"}],
+        messages=[{"role": "user", "content": f"<known_tags>{known}</known_tags>\n<transcript>\n{transcript_text}\n</transcript>"}],
         output_config={"effort": "low", "format": {"type": "json_schema", "schema": SUMMARY_SCHEMA}},
     )
     if response.stop_reason == "refusal":
         raise RuntimeError("summary refused")
     data = json.loads(next(b.text for b in response.content if b.type == "text"))
-    return {"title": data["title"].strip().strip('"\'').rstrip(".")[:80], "summary": data["summary"].strip()}
+    return {
+        "title": data["title"].strip().strip('"\'').rstrip(".")[:80],
+        "summary": data["summary"].strip(),
+        "tags": [str(t) for t in data.get("tags", [])][:3],
+    }
 
 
 REFUSAL_TEXT = "Je ne peux pas répondre à cette demande."
