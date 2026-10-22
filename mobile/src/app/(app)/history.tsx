@@ -134,16 +134,18 @@ export default function History() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={{ padding: 16, paddingBottom: 0, gap: 10 }}>
         {selecting ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ color: t.text, fontWeight: '700', flex: 1 }}>
+          <View style={{ gap: 8 }}>
+            <Text style={{ color: t.text, fontWeight: '700' }}>
               {selected.size} sélectionnée{selected.size > 1 ? 's' : ''}
             </Text>
-            {selected.size === 1 && (
-              <Button title="Renommer" variant="secondary" onPress={() => setRenaming((items ?? []).find((i) => selected.has(i.id)) ?? null)} style={{ minHeight: 40, paddingHorizontal: 12 }} />
-            )}
-            <Button title="Épingler" variant="secondary" onPress={pinSelected} style={{ minHeight: 40, paddingHorizontal: 12 }} />
-            <Button title="Supprimer" variant="danger" onPress={deleteSelected} style={{ minHeight: 40, paddingHorizontal: 12 }} />
-            <Button title="Annuler" variant="ghost" onPress={() => setSelected(new Set())} style={{ minHeight: 40, paddingHorizontal: 8 }} />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+              {selected.size === 1 && (
+                <Button title="Renommer" variant="secondary" onPress={() => setRenaming((items ?? []).find((i) => selected.has(i.id)) ?? null)} style={{ minHeight: 40, paddingHorizontal: 12 }} />
+              )}
+              <Button title="Épingler" variant="secondary" onPress={pinSelected} style={{ minHeight: 40, paddingHorizontal: 12 }} />
+              <Button title="Supprimer" variant="danger" onPress={deleteSelected} style={{ minHeight: 40, paddingHorizontal: 12 }} />
+              <Button title="Annuler" variant="ghost" onPress={() => setSelected(new Set())} style={{ minHeight: 40, paddingHorizontal: 8 }} />
+            </View>
           </View>
         ) : (
           <TextInput
@@ -190,11 +192,6 @@ export default function History() {
                 <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', flex: 1 }} numberOfLines={1}>
                   {item.filename}
                 </Text>
-                {!selecting && (
-                  <Pressable onPress={() => setRenaming(item)} hitSlop={10} accessibilityLabel={`Renommer ${item.filename}`}>
-                    <Ionicons name="pencil" size={16} color={t.muted} />
-                  </Pressable>
-                )}
               </View>
               {(item.tags ?? []).length > 0 && (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>

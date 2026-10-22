@@ -316,7 +316,13 @@ export default function TranscriptScreen() {
                 <Card style={{ padding: 12 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                     <Ionicons name="sparkles" size={14} color={t.primary} />
-                    <Text style={{ color: t.primary, fontWeight: '700', fontSize: 13 }}>Résumé</Text>
+                    <Text style={{ color: t.primary, fontWeight: '700', fontSize: 13, flex: 1 }}>Résumé</Text>
+                    {!offline && (
+                      <Pressable onPress={makeSummary} disabled={summarizing} hitSlop={8} accessibilityLabel="Régénérer le résumé" style={{ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: summarizing ? 0.5 : 1 }}>
+                        {summarizing ? <ActivityIndicator size="small" color={t.primary} /> : <Ionicons name="refresh" size={14} color={t.primary} />}
+                        <Text style={{ color: t.primary, fontSize: 13 }}>{summarizing ? 'En cours…' : 'Régénérer'}</Text>
+                      </Pressable>
+                    )}
                   </View>
                   <Text selectable style={{ color: t.text, fontSize: 15, lineHeight: 21 }}>
                     {summary}

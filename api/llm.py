@@ -75,7 +75,8 @@ SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "claude-haiku-5-5")
 SUMMARY_SYSTEM = """You write the title and the summary of an audio transcript (a voice memo, meeting, interview or call).
 - Write both in the language of the transcript.
 - title: at most 60 characters, says what it is about, no quotes, no trailing period, no date.
-- summary: 2 to 3 plain sentences (no Markdown, no lists) with the essentials: the subject, the key points or decisions, and who is involved if it matters."""
+- summary: 2 to 3 plain sentences (no Markdown, no lists) with the essentials: the subject, the key points or decisions, and who is involved if it matters.
+- Speakers are labelled in the transcript, either with a name or with a letter (A, B…). Always refer to a person by name: use the label when it is a name, and otherwise the name the conversation reveals (introductions, being addressed). If a speaker has no known name, describe them by role ("l'interviewé", "le client"), never "Speaker A"."""
 
 SUMMARY_SCHEMA = {
     "type": "object",

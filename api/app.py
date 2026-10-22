@@ -248,6 +248,18 @@ STALE_PROCESSING = timedelta(minutes=60)
 MIN_SUMMARY_CHARS = 200  # shorter than this, there is nothing to summarise
 
 
+def _named_transcript_text(row: Transcript) -> str:
+    """The transcript text with speaker labels replaced by the names the user gave them."""
+    names = {m.original_label: m.display_name for m in row.speaker_mappings}
+    if not names:
+        return row.text_content or ""
+    lines = []
+    for line in (row.text_content or "").split("\n"):
+        label, sep, rest = line.partition(": ")
+        lines.append(f"{names[label]}: {rest}" if sep and label in names else line)
+    return "\n".join(lines)
+
+
 def _auto_title_and_summary(row: Transcript, original_name: str) -> None:
     """Give a fresh transcript a title and a summary. Never fails the transcription."""
     owner = row.user
@@ -669,7 +681,7 @@ def generate_transcript_summary(
     if row.status != "completed" or len(row.text_content or "") < MIN_SUMMARY_CHARS:
         raise HTTPException(status_code=400, detail="This transcript is too short to summarise")
     try:
-        row.summary = llm.summarize(row.text_content)["summary"]
+        row.summary = llm.summarize(_named_transcript_text(row))["summary"]
     except llm.ChatNotConfigured as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
