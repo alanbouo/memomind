@@ -276,7 +276,7 @@ export const getTranscriptText = (id: number | string, timestamps = false) =>
     .then((r) => r.data)
 
 export const generateSummary = (id: number) =>
-  api.post<{ summary: string; suggested_tags?: string[] }>(`/transcripts/${id}/summary`, undefined, { timeout: 60000 }).then((r) => r.data)
+  api.post<{ summary: string; suggested_tags?: string[]; filename?: string }>(`/transcripts/${id}/summary`, undefined, { timeout: 60000 }).then((r) => r.data)
 
 export const getUtterances = (id: number) =>
   api

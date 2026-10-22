@@ -285,6 +285,9 @@ def _suggested_tags(row: Transcript) -> list:
     return [t for t in pending if t not in current]
 
 
+DEFAULT_NAME = re.compile(r"\.(m4a|mp3|mp4|wav|aac|ogg|flac|webm|mov|caf|amr)$|^enregistrement-\d{4}-\d\d-\d\d", re.I)
+
+
 def _auto_title_and_summary(row: Transcript, original_name: str, db: Session) -> None:
     """Give a fresh transcript a title, a summary and tag proposals. Never fails the transcription."""
     owner = row.user
@@ -300,7 +303,7 @@ def _auto_title_and_summary(row: Transcript, original_name: str, db: Session) ->
     row.summary = result["summary"]
     _store_suggested_tags(row, result["tags"])
     # Leave a name the user chose while the audio was being processed alone.
-    if result["title"] and row.filename == original_name:
+    if result["title"] and (row.filename == original_name or DEFAULT_NAME.search(row.filename or "")):
         row.filename = result["title"]
 
 
@@ -698,7 +701,7 @@ def generate_transcript_summary(
     user: str = Depends(authenticate_token),
     db: Session = Depends(get_db)
 ):
-    """(Re)generate the summary, for transcripts made before summaries existed. The name is left alone."""
+    """(Re)generate the summary and tag proposals; the title too while the name is still the file's"""
     db_user = get_user_by_email(db, user)
     row = db.query(Transcript).filter(
         Transcript.id == transcript_id, Transcript.user_id == db_user.id
@@ -711,13 +714,16 @@ def generate_transcript_summary(
         result = llm.summarize(_named_transcript_text(row), _known_tags(db, row.user_id))
         row.summary = result["summary"]
         _store_suggested_tags(row, result["tags"])
+        # A name still looking like the file's own is replaced; one the user chose is kept.
+        if result["title"] and DEFAULT_NAME.search(row.filename or ""):
+            row.filename = result["title"]
     except llm.ChatNotConfigured as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         print(f"[SUMMARY] Failed: {e}", flush=True)
         raise HTTPException(status_code=502, detail="The summary could not be generated, try again")
     db.commit()
-    return {"summary": row.summary, "suggested_tags": _suggested_tags(row)}
+    return {"summary": row.summary, "suggested_tags": _suggested_tags(row), "filename": row.filename}
 
 
 class TranscriptUpdate(BaseModel):
@@ -786,7 +792,12 @@ async def set_transcript_tags(
     """Replace the tags of a transcript"""
     transcript = _owned_transcript(db, user, transcript_id)
     tags = normalize_tags(data.tags)
-    transcript.tags = [TranscriptTag(tag=tag) for tag in tags]
+    # Touch only what changed: replacing every row would insert a kept tag before its old row is
+    # deleted, which breaks the (transcript, tag) uniqueness.
+    kept = {t.tag for t in transcript.tags if t.tag in tags}
+    transcript.tags = [t for t in transcript.tags if t.tag in kept] + [
+        TranscriptTag(tag=tag) for tag in tags if tag not in kept
+    ]
     db.commit()
     return {"tags": tags}
 

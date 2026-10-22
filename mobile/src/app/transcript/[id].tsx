@@ -185,6 +185,7 @@ export default function TranscriptScreen() {
       const result = await generateSummary(id)
       setSummary(result.summary)
       setSuggestedTags(result.suggested_tags ?? [])
+      if (result.filename) setFilename(result.filename)
       await loadUtterances() // keep the offline copy in step
     } catch (e) {
       Alert.alert('Erreur', errorMessage(e))
