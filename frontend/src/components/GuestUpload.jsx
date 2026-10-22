@@ -157,14 +157,14 @@ function GuestUpload({ onTranscriptComplete }) {
             </span>
             <button
               type="button"
-              className="px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+              className="px-4 py-1.5 bg-blue-600 text-gray-900 text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
             >
               Browse
             </button>
           </div>
         ) : (
           <div className="flex items-center border border-gray-300 rounded-lg px-4 py-3">
-            <FileAudio className="w-5 h-5 text-blue-600 mr-3" />
+            <FileAudio className="w-5 h-5 text-primary-800 dark:text-primary-400 mr-3" />
             <div className="flex-1 min-w-0">
               <p className="font-medium text-gray-900 truncate">{file.name}</p>
               <p className="text-xs text-gray-500">
@@ -206,7 +206,7 @@ function GuestUpload({ onTranscriptComplete }) {
                 onClick={() => setQuality(q)}
                 className={`px-3 py-1 text-sm rounded-md font-medium transition-all ${
                   quality === q
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-blue-600 text-gray-900'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -257,7 +257,7 @@ function GuestUpload({ onTranscriptComplete }) {
         <button
           onClick={handleUpload}
           disabled={uploading}
-          className="w-full mt-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+          className="w-full mt-6 py-3 bg-blue-600 text-gray-900 font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
         >
           Get Transcript & Summary
         </button>

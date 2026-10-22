@@ -95,7 +95,7 @@ function Login({ setIsAuthenticated, setGuestMode }) {
                 </button>
                 <button
                   onClick={() => goToView('signup')}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-900 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   Sign up
                 </button>
@@ -119,7 +119,7 @@ function Login({ setIsAuthenticated, setGuestMode }) {
             <div className="bg-white rounded-xl shadow-sm p-8 mb-6">
               <button
                 onClick={handleGuestMode}
-                className="w-full py-4 bg-blue-600 text-white text-lg font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                className="w-full py-4 bg-blue-600 text-gray-900 text-lg font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 Try it now — no account needed
                 <ArrowRight className="w-5 h-5" />
@@ -146,7 +146,7 @@ function Login({ setIsAuthenticated, setGuestMode }) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
               <div className="bg-white rounded-lg p-4 text-left">
                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-3">
-                  <Zap className="w-5 h-5 text-blue-600" />
+                  <Zap className="w-5 h-5 text-primary-800 dark:text-primary-400" />
                 </div>
                 <h3 className="font-medium text-gray-900 mb-1">Fast & Accurate</h3>
                 <p className="text-sm text-gray-500">AI-powered transcription with speaker detection</p>
@@ -172,7 +172,7 @@ function Login({ setIsAuthenticated, setGuestMode }) {
               <span className="text-gray-500">Want full features?</span>
               <button
                 onClick={() => goToView('signup')}
-                className="text-blue-600 hover:text-blue-700 font-medium"
+                className="text-primary-800 dark:text-primary-400 hover:text-primary-900 dark:hover:text-primary-300 font-medium"
               >
                 Create free account
               </button>
@@ -194,7 +194,7 @@ function Login({ setIsAuthenticated, setGuestMode }) {
               <div className="flex items-center gap-2">
                 <span className="font-medium text-gray-700">MemoMind</span>
                 <span>|</span>
-                <span>© 2025 <a href="https://alanbouo.com" className="text-blue-600 hover:underline">alanbouo.com</a></span>
+                <span>© 2025 <a href="https://alanbouo.com" className="text-primary-800 dark:text-primary-400 hover:underline">alanbouo.com</a></span>
               </div>
               <div className="flex items-center gap-4">
                 <a href="https://alanbouo.com/about" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">About</a>
@@ -233,7 +233,7 @@ function Login({ setIsAuthenticated, setGuestMode }) {
                   <span className="text-sm text-gray-500 hidden sm:inline">Don't have an account?</span>
                   <button
                     onClick={() => goToView('signup')}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                    className="px-4 py-2 text-sm font-medium text-gray-900 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     Sign up
                   </button>
@@ -298,12 +298,12 @@ function Login({ setIsAuthenticated, setGuestMode }) {
               <button
                 type="submit"
                 disabled={loading || code.length !== 6}
-                className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3 bg-blue-600 text-gray-900 font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Signing in...' : 'Sign In'}
               </button>
               <div className="flex items-center justify-between text-sm">
-                <button type="button" onClick={handleSendCode} disabled={loading} className="text-blue-600 hover:text-blue-700 disabled:opacity-50">
+                <button type="button" onClick={handleSendCode} disabled={loading} className="text-primary-800 dark:text-primary-400 hover:text-primary-900 dark:hover:text-primary-300 disabled:opacity-50">
                   Send a new code
                 </button>
                 <button type="button" onClick={resetForm} className="text-gray-500 hover:text-gray-700">
@@ -337,7 +337,7 @@ function Login({ setIsAuthenticated, setGuestMode }) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3 bg-blue-600 text-gray-900 font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Sending...' : 'Email me a code'}
               </button>
@@ -378,7 +378,7 @@ function Login({ setIsAuthenticated, setGuestMode }) {
             <div className="flex items-center gap-2">
               <span className="font-medium text-gray-700">MemoMind</span>
               <span>|</span>
-              <span>© 2025 <a href="https://alanbouo.com" className="text-blue-600 hover:underline">alanbouo.com</a></span>
+              <span>© 2025 <a href="https://alanbouo.com" className="text-primary-800 dark:text-primary-400 hover:underline">alanbouo.com</a></span>
             </div>
             <div className="flex items-center gap-4">
               <a href="https://alanbouo.com/about" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">About</a>

@@ -76,7 +76,7 @@ function inline(text) {
     if (link) {
       const href = safeHref(link[2])
       return href ? (
-        <a key={i} href={href} target="_blank" rel="noopener noreferrer" className="text-primary-600 dark:text-primary-400 underline">{link[1]}</a>
+        <a key={i} href={href} target="_blank" rel="noopener noreferrer" className="text-primary-800 dark:text-primary-400 dark:text-primary-400 underline">{link[1]}</a>
       ) : (
         <Fragment key={i}>{link[1]}</Fragment>
       )

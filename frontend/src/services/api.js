@@ -79,6 +79,19 @@ export const getCurrentUser = async () => {
   return response.data
 }
 
+// Sends the file and returns at once: the transcript shows up in the history as "processing" and finishes in the background.
+export const startTranscription = async (file, quality = 'high', onProgress) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('quality', quality)
+  formData.append('background', 'true')
+  const response = await api.post('/transcribe', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (e) => e.total && onProgress?.(Math.round((e.loaded * 100) / e.total)),
+  })
+  return response.data
+}
+
 export const transcribeAudio = async (file, quality = 'high', onProgress) => {
   const formData = new FormData()
   formData.append('file', file)
@@ -163,6 +176,36 @@ export const listTranscripts = async () => {
   return response.data
 }
 
+export const updateTranscript = async (transcriptId, patch) => {
+  const response = await api.patch(`/transcripts/${transcriptId}`, patch)
+  return response.data
+}
+
+export const getTranscriptStatus = async (transcriptId) => {
+  const response = await api.get(`/transcripts/${transcriptId}/status`)
+  return response.data
+}
+
+export const setTranscriptTags = async (transcriptId, tags) => {
+  const response = await api.put(`/transcripts/${transcriptId}/tags`, { tags })
+  return response.data.tags
+}
+
+export const setSuggestedTags = async (transcriptId, tags) => {
+  const response = await api.put(`/transcripts/${transcriptId}/suggested-tags`, { tags })
+  return response.data.suggested_tags
+}
+
+export const listTags = async () => {
+  const response = await api.get('/tags')
+  return response.data
+}
+
+export const generateSummary = async (transcriptId) => {
+  const response = await api.post(`/transcripts/${transcriptId}/summary`, undefined, { timeout: 60000 })
+  return response.data
+}
+
 export const renameTranscript = async (transcriptId, filename) => {
   const response = await api.patch(`/transcripts/${transcriptId}`, { filename })
   return response.data
@@ -201,7 +244,7 @@ export const streamChatMessage = async (transcriptId, message, onText, { regener
     } catch {
       // keep the generic message
     }
-    throw new Error(detail || 'Failed to send message')
+    throw new Error(detail || "L'envoi du message a échoué")
   }
 
   // Newline-delimited JSON: {"t": text} chunks, then {"done": true} or {"error": ...}

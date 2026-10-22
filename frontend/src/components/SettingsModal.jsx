@@ -5,25 +5,25 @@ import { Mic, MessageCircle, Monitor, User, Download, Trash2, AlertTriangle, Che
 
 const TABS = [
     { id: 'transcription', label: 'Transcription', icon: Mic },
-    { id: 'ai', label: 'AI Chat', icon: MessageCircle },
-    { id: 'display', label: 'Display', icon: Monitor },
-    { id: 'account', label: 'Account', icon: User },
+    { id: 'ai', label: 'Chat IA', icon: MessageCircle },
+    { id: 'display', label: 'Affichage', icon: Monitor },
+    { id: 'account', label: 'Compte', icon: User },
 ];
 
 const LANGUAGES = [
-    { code: '', label: 'Auto-detect' },
-    { code: 'en', label: 'English' },
-    { code: 'fr', label: 'French' },
-    { code: 'es', label: 'Spanish' },
-    { code: 'de', label: 'German' },
-    { code: 'it', label: 'Italian' },
-    { code: 'pt', label: 'Portuguese' },
-    { code: 'nl', label: 'Dutch' },
-    { code: 'ja', label: 'Japanese' },
-    { code: 'zh', label: 'Chinese' },
-    { code: 'ko', label: 'Korean' },
-    { code: 'ar', label: 'Arabic' },
-    { code: 'ru', label: 'Russian' },
+    { code: '', label: 'Détection auto' },
+    { code: 'en', label: 'Anglais' },
+    { code: 'fr', label: 'Français' },
+    { code: 'es', label: 'Espagnol' },
+    { code: 'de', label: 'Allemand' },
+    { code: 'it', label: 'Italien' },
+    { code: 'pt', label: 'Portugais' },
+    { code: 'nl', label: 'Néerlandais' },
+    { code: 'ja', label: 'Japonais' },
+    { code: 'zh', label: 'Chinois' },
+    { code: 'ko', label: 'Coréen' },
+    { code: 'ar', label: 'Arabe' },
+    { code: 'ru', label: 'Russe' },
 ];
 
 // A drop-down of ready-made prompts (from the API) with a "Custom" choice that shows a text box.
@@ -49,11 +49,11 @@ const PromptSelect = ({ label, description, presets, value, onChange, placeholde
             <p className={descClass + ' mb-2'}>{description}</p>
             <select value={selected} onChange={(e) => choose(e.target.value)} className={selectClass}>
                 {presets.map((p) => (
-                    <option key={p.id} value={p.id}>{p.label.en}</option>
+                    <option key={p.id} value={p.id}>{p.label.fr}</option>
                 ))}
-                <option value="__custom__">Custom…</option>
+                <option value="__custom__">Personnalisé…</option>
             </select>
-            {!isCustom && current && <p className={descClass + ' mt-1'}>{current.hint.en}</p>}
+            {!isCustom && current && <p className={descClass + ' mt-1'}>{current.hint.fr}</p>}
             {isCustom && (
                 <textarea
                     value={value}
@@ -120,7 +120,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
             });
         } catch (err) {
             console.error('Failed to fetch settings:', err);
-            setError('Failed to load settings');
+            setError('Impossible de charger les réglages');
         } finally {
             setLoading(false);
         }
@@ -141,14 +141,14 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
         setSuccess(null);
         try {
             await api.put('/settings', settings);
-            setSuccess('Settings saved successfully');
+            setSuccess('Réglages enregistrés');
             if (onSettingsChange) {
                 onSettingsChange(settings);
             }
             setTimeout(() => setSuccess(null), 3000);
         } catch (err) {
             console.error('Failed to save settings:', err);
-            setError('Failed to save settings');
+            setError("Impossible d'enregistrer les réglages");
         } finally {
             setSaving(false);
         }
@@ -164,10 +164,10 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
             document.body.appendChild(link);
             link.click();
             link.remove();
-            setSuccess('Data exported successfully');
+            setSuccess('Données exportées');
             setTimeout(() => setSuccess(null), 3000);
         } catch (err) {
-            setError('Failed to export data');
+            setError("L'export a échoué");
         }
     };
 
@@ -177,7 +177,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
             clearTokens();
             window.location.reload();
         } catch (err) {
-            setError('Failed to delete account');
+            setError('Impossible de supprimer le compte');
         }
     };
 
@@ -197,7 +197,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
             <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl">
                 {/* Header */}
                 <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Réglages</h2>
                     <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 text-2xl">
                         ×
                     </button>
@@ -211,7 +211,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                             onClick={() => setActiveTab(tab.id)}
                             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                                 activeTab === tab.id
-                                    ? 'border-primary-600 text-primary-600'
+                                    ? 'border-primary-600 text-primary-800 dark:text-primary-400'
                                     : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                             }`}
                         >
@@ -247,7 +247,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                             {activeTab === 'transcription' && (
                                 <div className="space-y-6">
                                     <div>
-                                        <label className={labelClass}>Default Quality</label>
+                                        <label className={labelClass}>Qualité par défaut</label>
                                         <div className="flex gap-2 mt-2">
                                             {['low', 'medium', 'high'].map(q => (
                                                 <button
@@ -255,23 +255,23 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                                     onClick={() => updateSetting('default_quality', q)}
                                                     className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
                                                         settings.default_quality === q
-                                                            ? 'bg-primary-600 text-white'
+                                                            ? 'bg-primary-600 text-gray-900'
                                                             : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                                                     }`}
                                                 >
-                                                    {q.charAt(0).toUpperCase() + q.slice(1)}
+                                                    {{ low: 'Rapide', medium: 'Équilibrée', high: 'Haute' }[q]}
                                                 </button>
                                             ))}
                                         </div>
                                         <p className={descClass}>
-                                            {settings.default_quality === 'high' && '128k bitrate - Best quality'}
-                                            {settings.default_quality === 'medium' && '96k bitrate - Balanced'}
-                                            {settings.default_quality === 'low' && '64k bitrate - Smaller file size'}
+                                            {settings.default_quality === 'high' && '128 kbit/s : meilleure qualité'}
+                                            {settings.default_quality === 'medium' && '96 kbit/s : équilibré'}
+                                            {settings.default_quality === 'low' && '64 kbit/s : fichier plus léger'}
                                         </p>
                                     </div>
 
                                     <div>
-                                        <label className={labelClass}>Default Language</label>
+                                        <label className={labelClass}>Langue par défaut</label>
                                         <select
                                             value={settings.default_language}
                                             onChange={(e) => updateSetting('default_language', e.target.value)}
@@ -281,7 +281,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                                 <option key={lang.code} value={lang.code}>{lang.label}</option>
                                             ))}
                                         </select>
-                                        <p className={descClass}>Force a specific language or let the AI auto-detect</p>
+                                        <p className={descClass}>Forcez une langue, ou laissez l’IA la détecter</p>
                                     </div>
 
                                     <label className="flex items-start gap-3 cursor-pointer">
@@ -289,11 +289,11 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                             type="checkbox"
                                             checked={settings.auto_summary}
                                             onChange={(e) => updateSetting('auto_summary', e.target.checked)}
-                                            className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                            className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-800 dark:text-primary-400 focus:ring-primary-500"
                                         />
                                         <span>
-                                            <span className={labelClass}>Automatic title and summary</span>
-                                            <span className={descClass}>After each transcription, the AI names the entry and writes a short summary.</span>
+                                            <span className={labelClass}>Titre et résumé automatiques</span>
+                                            <span className={descClass}>Après chaque transcription, l’IA donne un titre à l’entrée et en écrit un court résumé.</span>
                                         </span>
                                     </label>
                                 </div>
@@ -303,7 +303,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                             {activeTab === 'ai' && (
                                 <div className="space-y-6">
                                     <div>
-                                        <label className={labelClass}>Response Length</label>
+                                        <label className={labelClass}>Longueur des réponses</label>
                                         <div className="flex gap-2 mt-2">
                                             {['short', 'medium', 'detailed'].map(len => (
                                                 <button
@@ -311,23 +311,23 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                                     onClick={() => updateSetting('response_length', len)}
                                                     className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
                                                         settings.response_length === len
-                                                            ? 'bg-primary-600 text-white'
+                                                            ? 'bg-primary-600 text-gray-900'
                                                             : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                                                     }`}
                                                 >
-                                                    {len.charAt(0).toUpperCase() + len.slice(1)}
+                                                    {{ short: 'Courte', medium: 'Moyenne', detailed: 'Détaillée' }[len]}
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
 
                                     <PromptSelect
-                                        label="Assistant style"
-                                        description="How the AI answers in a transcript's chat."
+                                        label="Style de l’assistant"
+                                        description="Comment l’IA répond dans le chat d’une transcription."
                                         presets={presets.filter((p) => p.kind === 'system')}
                                         value={settings.system_prompt_template}
                                         onChange={(v) => updateSetting('system_prompt_template', v)}
-                                        placeholder="You are a helpful assistant... Use {transcript} where the transcript goes (otherwise it is added at the end)."
+                                        placeholder="Vous êtes un assistant… Utilisez {transcript} pour insérer la transcription (sinon elle est ajoutée à la fin)."
                                         rows="h-32"
                                         selectClass={inputClass}
                                         inputClass={inputClass}
@@ -336,12 +336,12 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                     />
 
                                     <PromptSelect
-                                        label="Automatic question"
-                                        description="Asked by itself when you open the chat of a new transcript."
+                                        label="Question automatique"
+                                        description="Posée toute seule quand vous ouvrez le chat d’une nouvelle transcription."
                                         presets={presets.filter((p) => p.kind === 'auto')}
                                         value={settings.default_user_prompt}
                                         onChange={(v) => updateSetting('default_user_prompt', v)}
-                                        placeholder="Summarize the main points..."
+                                        placeholder="Ex. Résume cette transcription en 5 points."
                                         rows="h-24"
                                         selectClass={inputClass}
                                         inputClass={inputClass}
@@ -355,7 +355,7 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                             {activeTab === 'display' && (
                                 <div className="space-y-6">
                                     <div>
-                                        <label className={labelClass}>Theme</label>
+                                        <label className={labelClass}>Thème</label>
                                         <div className="flex gap-2 mt-2">
                                             {['light', 'dark', 'system'].map(t => (
                                                 <button
@@ -363,56 +363,11 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                                     onClick={() => updateSetting('theme', t)}
                                                     className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
                                                         settings.theme === t
-                                                            ? 'bg-primary-600 text-white'
+                                                            ? 'bg-primary-600 text-gray-900'
                                                             : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                                                     }`}
                                                 >
-                                                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className={labelClass}>Date Format</label>
-                                        <div className="flex gap-2 mt-2">
-                                            <button
-                                                onClick={() => updateSetting('date_format', 'us')}
-                                                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
-                                                    settings.date_format === 'us'
-                                                        ? 'bg-primary-600 text-white'
-                                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                                }`}
-                                            >
-                                                US (MM/DD/YYYY)
-                                            </button>
-                                            <button
-                                                onClick={() => updateSetting('date_format', 'eu')}
-                                                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
-                                                    settings.date_format === 'eu'
-                                                        ? 'bg-primary-600 text-white'
-                                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                                }`}
-                                            >
-                                                EU (DD/MM/YYYY)
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className={labelClass}>Transcript Font Size</label>
-                                        <div className="flex gap-2 mt-2">
-                                            {['small', 'medium', 'large'].map(size => (
-                                                <button
-                                                    key={size}
-                                                    onClick={() => updateSetting('font_size', size)}
-                                                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
-                                                        settings.font_size === size
-                                                            ? 'bg-primary-600 text-white'
-                                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                                    }`}
-                                                >
-                                                    {size.charAt(0).toUpperCase() + size.slice(1)}
+                                                    {{ light: 'Clair', dark: 'Sombre', system: 'Système' }[t]}
                                                 </button>
                                             ))}
                                         </div>
@@ -425,30 +380,30 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                 <div className="space-y-8">
                                     {/* Signed in as */}
                                     <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                                        <p className="text-sm text-gray-500 dark:text-gray-400">Current Email</p>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">E-mail du compte</p>
                                         <p className="font-medium text-gray-900 dark:text-white">{userEmail}</p>
                                     </div>
 
                                     {/* Export Data */}
                                     <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Export Data</h3>
+                                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Exporter mes données</h3>
                                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                                            Download all your transcripts as a ZIP file
+                                            Téléchargez toutes vos transcriptions dans une archive ZIP
                                         </p>
                                         <button
                                             onClick={handleExportData}
                                             className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
                                         >
                                             <Download className="w-4 h-4" />
-                                            Export All Data
+                                            Tout exporter
                                         </button>
                                     </div>
 
-                                    {/* Delete Account */}
+                                    {/* Supprimer mon compte */}
                                     <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                                        <h3 className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">Danger Zone</h3>
+                                        <h3 className="text-lg font-medium text-red-600 dark:text-red-400 mb-2">Zone dangereuse</h3>
                                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                                            Permanently delete your account and all data. This cannot be undone.
+                                            Supprime définitivement votre compte et toutes vos données. Cette action est irréversible.
                                         </p>
                                         {!showDeleteConfirm ? (
                                             <button
@@ -456,26 +411,26 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                                                 className="flex items-center gap-2 px-4 py-2 border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30"
                                             >
                                                 <Trash2 className="w-4 h-4" />
-                                                Delete Account
+                                                Supprimer mon compte
                                             </button>
                                         ) : (
                                             <div className="p-4 bg-red-50 dark:bg-red-900/30 rounded-lg border border-red-200 dark:border-red-800">
                                                 <div className="flex items-center gap-2 text-red-600 dark:text-red-400 mb-3">
                                                     <AlertTriangle className="w-5 h-5" />
-                                                    <span className="font-medium">Are you absolutely sure?</span>
+                                                    <span className="font-medium">Vous en êtes sûr ?</span>
                                                 </div>
                                                 <div className="flex gap-2">
                                                     <button
                                                         onClick={() => setShowDeleteConfirm(false)}
                                                         className="flex-1 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
                                                     >
-                                                        Cancel
+                                                        Annuler
                                                     </button>
                                                     <button
                                                         onClick={handleDeleteAccount}
                                                         className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                                                     >
-                                                        Yes, Delete Everything
+                                                        Oui, tout supprimer
                                                     </button>
                                                 </div>
                                             </div>
@@ -494,14 +449,14 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                             onClick={onClose}
                             className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
-                            Cancel
+                            Annuler
                         </button>
                         <button
                             onClick={handleSave}
                             disabled={loading || saving}
-                            className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                            className="px-6 py-2 bg-primary-600 text-gray-900 rounded-lg hover:bg-primary-700 disabled:opacity-50"
                         >
-                            {saving ? 'Saving...' : 'Save Changes'}
+                            {saving ? 'Enregistrement…' : 'Enregistrer'}
                         </button>
                     </div>
                 )}

@@ -162,7 +162,7 @@ function Legal() {
                 <h2 className="text-xl font-semibold text-gray-900 mb-3">Contact</h2>
                 <p className="text-gray-600">
                   For any privacy-related questions or concerns, please contact us at{' '}
-                  <a href="https://alanbouo.com/contact" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">
+                  <a href="https://alanbouo.com/contact" className="text-primary-800 dark:text-primary-400 hover:underline" target="_blank" rel="noopener noreferrer">
                     alanbouo.com/contact
                   </a>
                 </p>
@@ -186,7 +186,7 @@ function Legal() {
             <div className="flex items-center gap-2">
               <span className="font-medium text-gray-700">MemoMind</span>
               <span>|</span>
-              <span>© 2026 <a href="https://alanbouo.com" className="text-blue-600 hover:underline">alanbouo.com</a></span>
+              <span>© 2026 <a href="https://alanbouo.com" className="text-primary-800 dark:text-primary-400 hover:underline">alanbouo.com</a></span>
             </div>
             <div className="flex items-center gap-4">
               <a href="https://alanbouo.com/about" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">About</a>

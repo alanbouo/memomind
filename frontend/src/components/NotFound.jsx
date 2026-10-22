@@ -18,7 +18,7 @@ function NotFound() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Page not found</h1>
         <p className="text-gray-600 mb-6">This page does not exist.</p>
-        <Link to="/" className="px-6 py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700">
+        <Link to="/" className="px-6 py-3 bg-primary-600 text-gray-900 rounded-lg font-medium hover:bg-primary-700">
           Back to MemoMind
         </Link>
       </div>

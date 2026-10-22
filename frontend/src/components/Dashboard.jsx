@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Clock, Settings, HelpCircle, MessageSquare } from 'lucide-react'
+import { Clock, Settings, LogOut, Mic } from 'lucide-react'
 import { clearTokens } from '../utils/auth'
 import { listTranscripts, getCurrentUser, adoptGuestTranscript, api } from '../services/api'
 import Upload from './Upload'
@@ -18,9 +18,9 @@ function Dashboard({ setIsAuthenticated }) {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('darkMode')
       if (saved !== null) return saved === 'true'
-      return window.matchMedia('(prefers-color-scheme: dark)').matches
+      return true // the brand is dark; the settings can switch to light or follow the system
     }
-    return false
+    return true
   })
   const [userEmail, setUserEmail] = useState('')
   const [userSettings, setUserSettings] = useState(null)
@@ -72,18 +72,13 @@ function Dashboard({ setIsAuthenticated }) {
     loadUser()
   }, [])
 
-  // Load transcripts on mount
-  useEffect(() => {
-    // A transcript made as a guest joins the account first, so it shows up in the list.
-    adoptGuestTranscript().finally(loadTranscripts)
-  }, [])
+  const processing = useRef(false)
 
-  const loadTranscripts = async () => {
+  const loadTranscripts = useCallback(async ({ quiet = false } = {}) => {
     try {
-      setLoading(true)
+      if (!quiet) setLoading(true)
       const data = await listTranscripts()
-      // Transform API response to match component format
-      const formattedTranscripts = data.map(t => ({
+      const formatted = data.map(t => ({
         id: t.transcript_id,
         database_id: t.id,
         filename: t.filename,
@@ -93,16 +88,31 @@ function Dashboard({ setIsAuthenticated }) {
         summary: t.summary,
         content: t.content,
         speakers: t.speakers,
-        textFile: `/transcripts/${t.transcript_id}?format=txt`,
-        jsonFile: `/transcripts/${t.transcript_id}?format=json`
+        tags: t.tags || [],
+        pinned: Boolean(t.pinned),
+        archived: Boolean(t.archived),
+        status: t.status || 'completed',
+        error: t.error,
       }))
-      setTranscripts(formattedTranscripts)
+      processing.current = formatted.some(t => t.status === 'processing')
+      setTranscripts(formatted)
     } catch (error) {
       console.error('Failed to load transcripts:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  // Load transcripts on mount; a transcript made as a guest joins the account first.
+  useEffect(() => {
+    adoptGuestTranscript().finally(loadTranscripts)
+  }, [loadTranscripts])
+
+  // Keep refreshing while something is being transcribed.
+  useEffect(() => {
+    const timer = setInterval(() => processing.current && loadTranscripts({ quiet: true }), 5000)
+    return () => clearInterval(timer)
+  }, [loadTranscripts])
 
   const handleLogout = () => {
     clearTokens()
@@ -110,28 +120,25 @@ function Dashboard({ setIsAuthenticated }) {
     navigate('/login', { replace: true })
   }
 
-  const handleTranscriptComplete = (transcript) => {
-    setTranscripts([transcript, ...transcripts])
-  }
-
   const handleTranscriptDeleted = (transcriptId) => {
-    setTranscripts(transcripts.filter(t => t.database_id !== transcriptId))
+    setTranscripts(prev => prev.filter(t => t.database_id !== transcriptId))
   }
 
-  const handleTranscriptRenamed = (transcriptId, newFilename) => {
-    setTranscripts(transcripts.map(t => 
-      t.database_id === transcriptId 
-        ? { ...t, filename: newFilename }
-        : t
-    ))
+  // Merge a change made in the list or the viewer (pin, archive, tags, name, summary…).
+  // Pinned entries stay on top, as the server orders them.
+  const handleTranscriptChanged = (transcriptId, changes) => {
+    setTranscripts(prev => {
+      const next = prev.map(t => (t.database_id === transcriptId ? { ...t, ...changes } : t))
+      return 'pinned' in changes ? [...next.filter(t => t.pinned), ...next.filter(t => !t.pinned)] : next
+    })
   }
 
   const NavButton = ({ icon: Icon, label, isActive, onClick, badge }) => (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 px-4 py-2 transition-colors ${
+      className={`flex flex-col items-center gap-1 px-2 sm:px-4 py-2 transition-colors ${
         isActive 
-          ? 'text-blue-600' 
+          ? 'text-primary-800 dark:text-primary-400' 
           : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
       }`}
     >
@@ -155,34 +162,34 @@ function Dashboard({ setIsAuthenticated }) {
             <div className="flex items-center gap-3">
               <img src="/logo.png" alt="MemoMind" className="w-9 h-9" />
               <div>
-                <h1 className="text-lg font-bold text-gray-900 dark:text-white">MemoMind</h1>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Chat with your voice memos</p>
+                <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">MemoMind</h1>
+                <p className="label-bracket hidden sm:block">discutez avec vos mémos vocaux</p>
               </div>
             </div>
 
             {/* Navigation */}
             <nav className="flex items-center gap-1">
-              <NavButton 
-                icon={MessageSquare} 
-                label="Upload" 
+              <NavButton
+                icon={Mic}
+                label="Enregistrer"
                 isActive={activeView === 'upload'}
                 onClick={() => setActiveView('upload')}
               />
-              <NavButton 
-                icon={Clock} 
-                label="History" 
+              <NavButton
+                icon={Clock}
+                label="Historique"
                 isActive={activeView === 'history'}
                 onClick={() => setActiveView('history')}
               />
-              <NavButton 
-                icon={Settings} 
-                label="Settings" 
+              <NavButton
+                icon={Settings}
+                label="Réglages"
                 isActive={isSettingsOpen}
                 onClick={() => setIsSettingsOpen(true)}
               />
-              <NavButton 
-                icon={HelpCircle} 
-                label="Help" 
+              <NavButton
+                icon={LogOut}
+                label="Quitter"
                 isActive={false}
                 onClick={handleLogout}
               />
@@ -192,28 +199,30 @@ function Dashboard({ setIsAuthenticated }) {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex items-start justify-center px-4 py-12">
+      <main className="flex-1 flex items-start justify-center px-4 py-8 sm:py-12">
         <div className="w-full max-w-2xl">
           {activeView === 'upload' ? (
-            <Upload 
-              onTranscriptComplete={(transcript) => {
-                handleTranscriptComplete(transcript)
+            <Upload
+              onTranscriptStarted={() => {
+                loadTranscripts({ quiet: true })
                 setActiveView('history')
               }}
               defaultQuality={userSettings?.default_quality || 'medium'}
             />
           ) : (
             <div className="animate-fade-in">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Transcript History</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">
+                <span className="label-bracket text-base">historique</span>
+              </h2>
               {loading ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-12 flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <div className="card p-12 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                 </div>
               ) : (
-                <TranscriptViewer 
+                <TranscriptViewer
                   transcripts={transcripts}
                   onTranscriptDeleted={handleTranscriptDeleted}
-                  onTranscriptRenamed={handleTranscriptRenamed}
+                  onTranscriptChanged={handleTranscriptChanged}
                 />
               )}
             </div>
@@ -228,13 +237,13 @@ function Dashboard({ setIsAuthenticated }) {
             <div className="flex items-center gap-2">
               <span className="font-medium text-gray-700 dark:text-gray-300">MemoMind</span>
               <span>|</span>
-              <span>© 2025 <a href="https://alanbouo.com" className="text-blue-600 hover:underline">alanbouo.com</a></span>
+              <span>© <a href="https://alanbouo.com" className="text-primary-800 dark:text-primary-400 hover:underline">alanbouo.com</a></span>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={handleLogout} className="hover:text-gray-700 dark:hover:text-gray-300">Logout</button>
-              <a href="https://alanbouo.com/about" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700 dark:hover:text-gray-300">About</a>
+              <button onClick={handleLogout} className="hover:text-gray-700 dark:hover:text-gray-300">Déconnexion</button>
+              <a href="https://alanbouo.com/about" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700 dark:hover:text-gray-300">À propos</a>
               <a href="https://alanbouo.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700 dark:hover:text-gray-300">Contact</a>
-              <Link to="/privacy" className="hover:text-gray-700 dark:hover:text-gray-300">Privacy Policy</Link>
+              <Link to="/privacy" className="hover:text-gray-700 dark:hover:text-gray-300">Confidentialité</Link>
             </div>
           </div>
         </div>

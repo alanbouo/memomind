@@ -4,15 +4,15 @@ import { streamChatMessage, getChatHistory, clearChatHistory, api } from '../ser
 import Markdown from './Markdown'
 
 const SUGGESTIONS = [
-  { icon: List, label: 'Summarize in 5 points', prompt: 'Summarize this transcript in 5 key points.' },
-  { icon: ListChecks, label: 'Action items', prompt: 'What are the action items or tasks, and who owns each?' },
-  { icon: Flag, label: 'Decisions made', prompt: 'What decisions were made?' },
-  { icon: Users, label: 'Who said what?', prompt: 'Summarize what each speaker said.' },
+  { icon: List, label: 'Résumer en 5 points', prompt: 'Résume cette transcription en 5 points clés.' },
+  { icon: ListChecks, label: 'Actions à mener', prompt: 'Quelles sont les actions ou tâches à mener, et qui est responsable de chacune ?' },
+  { icon: Flag, label: 'Décisions prises', prompt: 'Quelles décisions ont été prises ?' },
+  { icon: Users, label: 'Qui a dit quoi ?', prompt: 'Résume ce que chaque interlocuteur a dit.' },
 ]
 
 function TypingDots() {
   return (
-    <div className="flex gap-1.5 py-2" aria-label="The assistant is typing">
+    <div className="flex gap-1.5 py-2" aria-label="L'assistant écrit">
       {[0, 1, 2].map((i) => (
         <span
           key={i}
@@ -54,7 +54,7 @@ function ChatInterface({ transcriptId }) {
       await streamChatMessage(transcriptId, text, append, { regenerate, signal: controller.signal })
     } catch (err) {
       if (!controller.signal.aborted) {
-        setError(err.response?.data?.detail || err.message || 'Failed to send message.')
+        setError(err.response?.data?.detail || err.message || "L'envoi du message a échoué.")
         // An answer that never started is dropped; a partial one stays.
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -119,18 +119,18 @@ function ChatInterface({ transcriptId }) {
       setCopied(index)
       setTimeout(() => setCopied((c) => (c === index ? null : c)), 1500)
     } catch {
-      setError('Could not copy to the clipboard.')
+      setError('Copie impossible.')
     }
   }
 
   const handleClearHistory = async () => {
-    if (!confirm('Clear this conversation? The messages will be deleted.')) return
+    if (!confirm('Effacer cette conversation ? Les messages seront supprimés.')) return
     try {
       await clearChatHistory(transcriptId)
       setMessages([])
       await startPrompt()
     } catch {
-      setError('Failed to clear chat history')
+      setError("Impossible d'effacer la conversation")
     }
   }
 
@@ -141,17 +141,17 @@ function ChatInterface({ transcriptId }) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-primary-600" />
-          <h3 className="font-semibold text-gray-900 dark:text-white">AI Chat</h3>
+          <Sparkles className="w-5 h-5 text-primary-800 dark:text-primary-400" />
+          <h3 className="font-semibold text-gray-900 dark:text-white">Chat IA</h3>
         </div>
         {messages.length > 0 && !sending && (
           <button
             onClick={handleClearHistory}
             className="text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1"
-            title="Clear the conversation"
+            title="Effacer la conversation"
           >
             <Trash2 className="w-4 h-4" />
-            Clear conversation
+            Effacer la conversation
           </button>
         )}
       </div>
@@ -162,10 +162,10 @@ function ChatInterface({ transcriptId }) {
           {messages.length === 0 && !sending && (
             <div className="flex flex-col items-center text-center py-10">
               <div className="w-14 h-14 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center mb-4">
-                <Sparkles className="w-7 h-7 text-primary-600" />
+                <Sparkles className="w-7 h-7 text-primary-800 dark:text-primary-400" />
               </div>
-              <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Ask about this transcript</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">The AI answers from what was said in the recording.</p>
+              <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Posez une question sur cette transcription</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">L'IA répond à partir de ce qui a été dit dans l'enregistrement.</p>
               <div className="grid sm:grid-cols-2 gap-2 w-full max-w-lg">
                 {SUGGESTIONS.map(({ icon: Icon, label, prompt }) => (
                   <button
@@ -173,7 +173,7 @@ function ChatInterface({ transcriptId }) {
                     onClick={() => submit(prompt)}
                     className="flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors"
                   >
-                    <Icon className="w-4 h-4 text-primary-600 shrink-0" />
+                    <Icon className="w-4 h-4 text-primary-800 dark:text-primary-400 shrink-0" />
                     {label}
                   </button>
                 ))}
@@ -184,24 +184,24 @@ function ChatInterface({ transcriptId }) {
           {messages.map((msg, idx) =>
             msg.role === 'user' ? (
               <div key={idx} className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary-600 text-white px-4 py-2.5">
+                <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary-600 text-gray-900 px-4 py-2.5">
                   <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                 </div>
               </div>
             ) : (
               <div key={idx} className="flex gap-3 group">
                 <div className="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center shrink-0 mt-0.5">
-                  <Sparkles className="w-4 h-4 text-primary-600" />
+                  <Sparkles className="w-4 h-4 text-primary-800 dark:text-primary-400" />
                 </div>
                 <div className="min-w-0 flex-1 text-gray-900 dark:text-gray-100">
                   {msg.content ? <Markdown>{msg.content}</Markdown> : <TypingDots />}
                   {msg.content && !(sending && idx === lastIndex) && (
                     <div className="flex gap-1 mt-1.5 -ml-1.5 text-gray-400">
-                      <button onClick={() => copy(idx)} title="Copy" className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200">
+                      <button onClick={() => copy(idx)} title="Copier" className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200">
                         {copied === idx ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
                       </button>
                       {idx === lastIndex && (
-                        <button onClick={regenerate} title="Regenerate" className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200">
+                        <button onClick={regenerate} title="Régénérer" className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200">
                           <RefreshCw className="w-4 h-4" />
                         </button>
                       )}
@@ -245,8 +245,8 @@ function ChatInterface({ transcriptId }) {
               e.target.style.height = 'auto'
               e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px'
             }}
-            placeholder="Ask a question about this transcript…"
-            aria-label="Your question"
+            placeholder="Posez une question sur cette transcription…"
+            aria-label="Votre question"
             rows={1}
             className="flex-1 resize-none bg-transparent outline-none py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 max-h-[140px]"
           />
@@ -254,7 +254,7 @@ function ChatInterface({ transcriptId }) {
             <button
               type="button"
               onClick={() => abortRef.current?.abort()}
-              title="Stop"
+              title="Arrêter"
               className="w-9 h-9 rounded-full bg-gray-900 dark:bg-white text-white dark:text-gray-900 flex items-center justify-center shrink-0"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
@@ -263,8 +263,8 @@ function ChatInterface({ transcriptId }) {
             <button
               type="submit"
               disabled={!inputMessage.trim()}
-              title="Send"
-              className="w-9 h-9 rounded-full bg-primary-600 text-white flex items-center justify-center shrink-0 disabled:opacity-35 disabled:cursor-not-allowed hover:bg-primary-700 transition-colors"
+              title="Envoyer"
+              className="w-9 h-9 rounded-full bg-primary-600 text-gray-900 flex items-center justify-center shrink-0 disabled:opacity-35 disabled:cursor-not-allowed hover:bg-primary-700 transition-colors"
             >
               <ArrowUp className="w-5 h-5" />
             </button>
