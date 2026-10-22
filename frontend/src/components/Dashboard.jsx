@@ -207,7 +207,6 @@ function Dashboard({ setIsAuthenticated }) {
                 loadTranscripts({ quiet: true })
                 setActiveView('history')
               }}
-              defaultQuality={userSettings?.default_quality || 'medium'}
             />
           ) : (
             <div className="animate-fade-in">

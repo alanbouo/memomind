@@ -247,30 +247,6 @@ const SettingsModal = ({ isOpen, onClose, onSettingsChange }) => {
                             {activeTab === 'transcription' && (
                                 <div className="space-y-6">
                                     <div>
-                                        <label className={labelClass}>Qualité par défaut</label>
-                                        <div className="flex gap-2 mt-2">
-                                            {['low', 'medium', 'high'].map(q => (
-                                                <button
-                                                    key={q}
-                                                    onClick={() => updateSetting('default_quality', q)}
-                                                    className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
-                                                        settings.default_quality === q
-                                                            ? 'bg-primary-600 text-gray-900'
-                                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                                    }`}
-                                                >
-                                                    {{ low: 'Rapide', medium: 'Équilibrée', high: 'Haute' }[q]}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <p className={descClass}>
-                                            {settings.default_quality === 'high' && '128 kbit/s : meilleure qualité'}
-                                            {settings.default_quality === 'medium' && '96 kbit/s : équilibré'}
-                                            {settings.default_quality === 'low' && '64 kbit/s : fichier plus léger'}
-                                        </p>
-                                    </div>
-
-                                    <div>
                                         <label className={labelClass}>Langue par défaut</label>
                                         <select
                                             value={settings.default_language}

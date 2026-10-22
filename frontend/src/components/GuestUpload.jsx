@@ -4,7 +4,6 @@ import { transcribeAudioGuest } from '../services/api'
 
 function GuestUpload({ onTranscriptComplete }) {
   const [file, setFile] = useState(null)
-  const [quality, setQuality] = useState('medium')
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [dragActive, setDragActive] = useState(false)
@@ -71,7 +70,7 @@ function GuestUpload({ onTranscriptComplete }) {
     setProgressLabel('Uploading file...')
 
     try {
-      const result = await transcribeAudioGuest(file, quality, (prog) => {
+      const result = await transcribeAudioGuest(file, 'medium', (prog) => {
         setProgress(prog)
         if (prog < 25) {
           setProgressLabel('Uploading file...')
@@ -193,29 +192,6 @@ function GuestUpload({ onTranscriptComplete }) {
         <p className="text-xs text-gray-500 mt-2">
           Supported: M4A, MP3, WAV, MP4, MOV, M4V, WEBM (Max 5MB in guest mode)
         </p>
-      )}
-
-      {/* Quality Selector */}
-      {file && !uploading && status !== 'success' && (
-        <div className="mt-4 flex items-center gap-3">
-          <span className="text-sm text-gray-600">Quality:</span>
-          <div className="flex gap-2">
-            {['low', 'medium'].map((q) => (
-              <button
-                key={q}
-                onClick={() => setQuality(q)}
-                className={`px-3 py-1 text-sm rounded-md font-medium transition-all ${
-                  quality === q
-                    ? 'bg-blue-600 text-gray-900'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {q.charAt(0).toUpperCase() + q.slice(1)}
-              </button>
-            ))}
-          </div>
-          <span className="text-xs text-gray-400">(High quality requires account)</span>
-        </div>
       )}
 
       {/* Progress Bar */}

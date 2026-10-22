@@ -3,7 +3,7 @@ import { FileAudio, X, AlertCircle, Plus, Mic, Square, Upload as UploadIcon } fr
 import { startTranscription } from '../services/api'
 
 const MAX_SIZE = 100 * 1024 * 1024
-const QUALITIES = [['low', 'Rapide'], ['medium', 'Équilibrée'], ['high', 'Haute']]
+const QUALITY = 'medium'
 
 const clock = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 
@@ -13,23 +13,67 @@ const recorderFormat = () => {
   return ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported(t)) || ''
 }
 
-function Upload({ onTranscriptStarted, defaultQuality = 'medium' }) {
+// Live audiogram of the microphone: one bar every 60 ms, scrolling left, drawn from the input's loudness.
+function Waveform({ stream }) {
+  const canvasRef = useRef(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const AudioCtx = window.AudioContext || window.webkitAudioContext
+    if (!canvas || !stream || !AudioCtx) return
+    const audio = new AudioCtx()
+    const analyser = audio.createAnalyser()
+    analyser.fftSize = 512
+    audio.createMediaStreamSource(stream).connect(analyser)
+    const samples = new Uint8Array(analyser.fftSize)
+    const ratio = window.devicePixelRatio || 1
+    const width = canvas.clientWidth
+    const height = canvas.clientHeight
+    canvas.width = width * ratio
+    canvas.height = height * ratio
+    const ctx = canvas.getContext('2d')
+    ctx.scale(ratio, ratio)
+    const step = 5 // bar width + gap
+    const bars = new Array(Math.floor(width / step)).fill(0)
+
+    const draw = () => {
+      analyser.getByteTimeDomainData(samples)
+      let peak = 0
+      for (const v of samples) peak = Math.max(peak, Math.abs(v - 128))
+      bars.push(Math.min(1, (peak / 128) * 1.6))
+      bars.shift()
+      ctx.clearRect(0, 0, width, height)
+      ctx.fillStyle = '#C99A4E'
+      bars.forEach((level, i) => {
+        const h = Math.max(2, level * height)
+        ctx.fillRect(i * step, (height - h) / 2, 3, h)
+      })
+    }
+    const timer = setInterval(draw, 60)
+    return () => {
+      clearInterval(timer)
+      audio.close()
+    }
+  }, [stream])
+
+  return <canvas ref={canvasRef} className="w-full h-16" aria-hidden="true" />
+}
+
+function Upload({ onTranscriptStarted }) {
   const [file, setFile] = useState(null)
-  const [quality, setQuality] = useState(defaultQuality)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [dragActive, setDragActive] = useState(false)
   const [status, setStatus] = useState(null) // 'success' | 'error'
   const [message, setMessage] = useState('')
   const [recording, setRecording] = useState(false)
+  const [micStream, setMicStream] = useState(null)
   const [elapsed, setElapsed] = useState(0)
   const [preview, setPreview] = useState(null)
   const fileInputRef = useRef(null)
   const recorderRef = useRef(null)
   const chunksRef = useRef([])
   const canRecord = Boolean(navigator.mediaDevices?.getUserMedia) && recorderFormat() !== null
-
-  useEffect(() => setQuality(defaultQuality), [defaultQuality])
 
   // The player for what was recorded or picked; released when replaced.
   useEffect(() => {
@@ -91,6 +135,7 @@ function Upload({ onTranscriptStarted, defaultQuality = 'medium' }) {
       }
       recorder.start()
       recorderRef.current = recorder
+      setMicStream(stream)
       setFile(null)
       setElapsed(0)
       setRecording(true)
@@ -102,6 +147,7 @@ function Upload({ onTranscriptStarted, defaultQuality = 'medium' }) {
   const stopRecording = () => {
     recorderRef.current?.stop()
     setRecording(false)
+    setMicStream(null)
   }
 
   const reset = () => {
@@ -117,7 +163,7 @@ function Upload({ onTranscriptStarted, defaultQuality = 'medium' }) {
     setStatus(null)
     setMessage('')
     try {
-      await startTranscription(file, quality, setProgress)
+      await startTranscription(file, QUALITY, setProgress)
       reset()
       onTranscriptStarted?.()
     } catch (error) {
@@ -139,7 +185,8 @@ function Upload({ onTranscriptStarted, defaultQuality = 'medium' }) {
         onDrop={drop}
       >
         {recording ? (
-          <div className="flex flex-col items-center gap-4 py-8 border border-primary-600/60 rounded-lg">
+          <div className="flex flex-col items-center gap-4 py-6 px-4 border border-primary-600/60 rounded-lg">
+            <Waveform stream={micStream} />
             <div className="flex items-center gap-3 font-mono text-2xl text-gray-900 dark:text-white">
               <span className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
               {clock(elapsed)}
@@ -190,23 +237,6 @@ function Upload({ onTranscriptStarted, defaultQuality = 'medium' }) {
 
       {!file && !recording && (
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">M4A, MP3, WAV, MP4, MOV, WEBM… jusqu'à 100 Mo.</p>
-      )}
-
-      {file && !uploading && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <span className="text-sm text-gray-600 dark:text-gray-400">Qualité :</span>
-          <div className="flex gap-2">
-            {QUALITIES.map(([q, label]) => (
-              <button
-                key={q}
-                onClick={() => setQuality(q)}
-                className={`px-3 py-1 text-sm rounded-md font-medium transition-all ${quality === q ? 'bg-primary-600 text-gray-900' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
       )}
 
       {uploading && (
