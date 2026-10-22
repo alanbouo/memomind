@@ -36,7 +36,7 @@ function RootNavigator() {
   return (
     <>
       {status === 'signedIn' && <IncomingShare />}
-      <Stack screenOptions={{ headerStyle: { backgroundColor: t.card }, headerTintColor: t.text, contentStyle: { backgroundColor: t.bg } }}>
+      <Stack screenOptions={{ headerStyle: { backgroundColor: t.card }, headerTintColor: t.text, contentStyle: { backgroundColor: t.bg }, headerBackButtonDisplayMode: 'minimal' }}>
         <Stack.Protected guard={status === 'signedIn'}>
           <Stack.Screen name="(app)" options={{ headerShown: false }} />
           <Stack.Screen name="transcript/[id]" options={{ title: 'Transcription' }} />

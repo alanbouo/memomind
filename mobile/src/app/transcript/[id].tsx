@@ -45,7 +45,6 @@ export default function TranscriptScreen() {
   const [tab, setTab] = useState<'text' | 'chat'>('text')
   const [filename, setFilename] = useState('Transcription')
   const [utterances, setUtterances] = useState<Utterance[] | null>(null)
-  const [timestamps, setTimestamps] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [renameFile, setRenameFile] = useState(false)
   const [speaker, setSpeaker] = useState<Utterance | null>(null)
@@ -203,7 +202,7 @@ export default function TranscriptScreen() {
 
   const withText = async (fn: (text: string) => Promise<unknown> | unknown) => {
     try {
-      await fn(await getTranscriptText(id, timestamps))
+      await fn(await getTranscriptText(id, true))
     } catch (e) {
       Alert.alert('Erreur', errorMessage(e))
     }
@@ -230,9 +229,6 @@ export default function TranscriptScreen() {
 
   const menu = () => {
     const actions: [string, () => void][] = [
-      [timestamps ? 'Masquer les horodatages' : 'Afficher les horodatages', () => setTimestamps((v) => !v)],
-      ['Partager le texte', shareText],
-      ['Copier le texte', copyText],
       [pinned ? 'Désépingler' : 'Épingler en haut', togglePin],
       ['Renommer', () => setRenameFile(true)],
       ['Supprimer', confirmDelete],
@@ -243,7 +239,7 @@ export default function TranscriptScreen() {
         (i) => actions[i]?.[1]()
       )
     } else {
-      Alert.alert(filename, undefined, [...actions.map(([text, onPress]) => ({ text, onPress })).slice(0, 3), { text: 'Plus…', onPress: () => Alert.alert(filename, undefined, [...actions.slice(3).map(([text, onPress]) => ({ text, onPress })), { text: 'Annuler', style: 'cancel' as const }]) }])
+      Alert.alert(filename, undefined, actions.map(([text, onPress]) => ({ text, onPress })))
     }
   }
 
@@ -350,7 +346,7 @@ export default function TranscriptScreen() {
             )}
             <UtteranceList
               utterances={utterances}
-              showTimestamps={timestamps}
+              showTimestamps
               onSpeakerPress={setSpeaker}
               onUtterancePress={recUri ? playFrom : undefined}
               markers={markers}
