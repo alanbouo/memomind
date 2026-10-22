@@ -452,7 +452,8 @@ export default function TranscriptScreen() {
       <PromptModal
         visible={!!speaker}
         title={`Renommer « ${speaker?.speaker_name ?? ''} »`}
-        initialValue={speaker?.speaker_name ?? ''}
+        // Still the default label (A, B…): start empty rather than make the user erase it.
+        initialValue={speaker && speaker.speaker_name !== speaker.speaker ? speaker.speaker_name : ''}
         onCancel={() => setSpeaker(null)}
         onSubmit={async (v) => {
           const target = speaker

@@ -341,9 +341,6 @@ export function UploadPanel({ onSubmit, persist = false, maxBytes }: Props) {
       {audio && !active && (
         <Card>
           <AudioPreview key={audio.uri} uri={audio.uri} name={audio.name} />
-          <Muted style={{ marginTop: 10 }}>
-            {persist ? 'Enregistré sur votre appareil. Le réseau ne sert qu’à transcrire.' : 'Écoutez avant de transcrire.'}
-          </Muted>
         </Card>
       )}
 
