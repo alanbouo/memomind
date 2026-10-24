@@ -149,11 +149,23 @@ def social_login(data: SocialLogin, db: Session = Depends(get_db)):
     return sign_in_email(db, email, data.provider)
 
 
+def is_review_account(email: str) -> bool:
+    """The App Store reviewer's account: a fixed code from the environment instead of an e-mailed one.
+
+    Reviewers cannot read a mailbox. Only one address qualifies, only when both variables are set.
+    """
+    review_email = (os.getenv("REVIEW_EMAIL") or "").strip().lower()
+    return bool(review_email and os.getenv("REVIEW_CODE") and email == review_email)
+
+
 @app.post("/auth/email/request")
 def request_email_code(data: EmailCodeRequest, db: Session = Depends(get_db)):
     """E-mail a one-time sign-in code. Same answer whether or not an account exists."""
     email = data.email.strip().lower()
     now = datetime.utcnow()
+
+    if is_review_account(email):
+        return {"message": "If the address is valid, a code is on its way."}
 
     recent = db.query(LoginCode).filter(
         LoginCode.email == email,
@@ -184,6 +196,11 @@ def verify_email_code(data: EmailCodeVerify, db: Session = Depends(get_db)):
     """Exchange an e-mailed code for tokens (creating the account if needed)."""
     email = data.email.strip().lower()
     invalid = HTTPException(status_code=400, detail="Invalid or expired code")
+
+    if is_review_account(email):
+        if not secrets.compare_digest(data.code.strip().encode(), os.environ["REVIEW_CODE"].strip().encode()):
+            raise invalid
+        return sign_in_email(db, email, "email")
 
     entry = db.query(LoginCode).filter(
         LoginCode.email == email,
