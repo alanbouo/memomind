@@ -34,7 +34,7 @@ from api.auth import (
     create_refresh_token,
     decode_token
 )
-from api import llm, push
+from api import llm, push, voice
 from api.prompts import PRESETS as PROMPT_PRESETS
 import json
 import jwt
@@ -1488,6 +1488,20 @@ async def delete_account(
     db.commit()
     
     return {"status": "success", "message": "Account deleted successfully"}
+
+
+@app.post("/voice/stream-token")
+async def voice_stream_token(request: Request):
+    """Temporary AssemblyAI streaming token for a partner app's server (see api/voice.py)."""
+    if not voice.service_key_valid(request.headers.get("X-Service-Key")):
+        raise HTTPException(status_code=401, detail="Invalid service key")
+    api_key = os.getenv("AAI_API_KEY") or os.getenv("ASSEMBLYAI_API_KEY")
+    if not api_key:
+        return JSONResponse(status_code=500, content={"error": "AAI_API_KEY missing in .env"})
+    try:
+        return voice.create_stream_token(api_key)
+    except voice.VoiceError as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
 
 
 @app.get("/health")
