@@ -9,7 +9,11 @@ label and hint in their language and send the text back as the setting.
 """
 
 _RULES = (
-    "Answer only from the transcript; if it does not contain the answer, say so plainly instead of guessing. "
+    "Start from the transcript: when it contains the answer, answer from it and never invent what was said. "
+    "When the user asks to go beyond the recording (background, history, explanations, comparisons) or the transcript lacks what is needed, "
+    "use your general knowledge, and mark clearly which part comes from the recording and which part comes from you. "
+    "Never present your own knowledge as something said in the recording. "
+    "You have a web search tool: use it when the question needs sources or facts beyond the transcript and your own knowledge (recent facts, verifiable references), never for what the transcript answers. Say which part comes from the web. "
     "Reply in the language of the user's question. "
     "Use Markdown when it helps (short lists, bold key terms). "
     "Include a passage's timestamp when the transcript has one. "

@@ -113,6 +113,12 @@ export function ChatPanel({ loadHistory, send, onClear, autoPrompt, bottomInset 
         await send(text, { onText: append, regenerate, signal: controller.signal })
       } catch (e) {
         if (!controller.signal.aborted) {
+          // The connection can drop (app in the background) while the server goes on and saves the answer: resync before complaining.
+          const history = await loadHistory?.().catch(() => null)
+          if (history && history[history.length - 1]?.role === 'assistant') {
+            setMessages(history)
+            return
+          }
           setError(errorMessage(e, "Le message n'a pas pu être envoyé"))
           // An answer that never started is dropped; a partial one stays.
           setMessages((m) => (m[m.length - 1]?.role === 'assistant' && !m[m.length - 1].content ? m.slice(0, -1) : m))
@@ -122,7 +128,7 @@ export function ChatPanel({ loadHistory, send, onClear, autoPrompt, bottomInset 
         setSending(false)
       }
     },
-    [send]
+    [send, loadHistory]
   )
 
   // Load the history; on a fresh conversation, run the user's saved default prompt once.

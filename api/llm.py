@@ -21,7 +21,9 @@ LENGTH_HINTS = {
 
 SYSTEM_RULES = """You are MemoMind's assistant. The user is asking about the transcript of an audio recording (a voice memo, meeting, interview or call).
 
-- Answer only from the transcript. If it does not contain the answer, say so plainly instead of guessing.
+- Start from the transcript. When it contains the answer, answer from it and never invent what was said.
+- The user may ask to go beyond the recording (background, history, explanations, comparisons). Then use your general knowledge, and mark clearly which part comes from the recording and which part comes from you. Never present your own knowledge as something said in the recording.
+- You have a web search tool: use it when the question needs sources or facts beyond the transcript and your own knowledge (recent facts, verifiable references), never for what the transcript answers. Say which part of the answer comes from the web.
 - Always reply in the language of the user's question.
 - Format with Markdown when it helps (short lists, bold for key terms, headings for long answers); plain sentences for simple answers.
 - When you quote or point to a passage, include its timestamp if the transcript has one.
@@ -60,6 +62,9 @@ def clean_history(messages: List[dict]) -> List[dict]:
     return out
 
 
+WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
+
+
 def _params(system: List[dict], messages: List[dict]) -> dict:
     return dict(
         model=MODEL,
@@ -67,6 +72,7 @@ def _params(system: List[dict], messages: List[dict]) -> dict:
         system=system,
         messages=messages,
         output_config={"effort": "low"},  # chat: latency matters more than depth
+        tools=[WEB_SEARCH_TOOL],
     )
 
 
