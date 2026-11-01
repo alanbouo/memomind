@@ -129,6 +129,19 @@ function Login({ setIsAuthenticated, setGuestMode }) {
               </p>
             </div>
 
+            {/* iOS app */}
+            <p className="text-sm text-gray-600 mb-8">
+              Also available on iPhone:{' '}
+              <a
+                href="https://apps.apple.com/fr/app/memomind-m%C3%A9mos-vocaux-ia/id6825675614"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-800 dark:text-primary-400 font-medium hover:underline"
+              >
+                Download on the App Store
+              </a>
+            </p>
+
             {/* Privacy Banner */}
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-8 flex items-center gap-4">
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
