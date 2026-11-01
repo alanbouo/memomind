@@ -116,13 +116,24 @@ def summarize(transcript_text: str, known_tags: Sequence[str] = ()) -> dict:
 REFUSAL_TEXT = "Je ne peux pas répondre à cette demande."
 
 
+MAX_PAUSE_RESUMES = 3
+
+
 def stream_reply(system: List[dict], messages: List[dict]) -> Iterator[str]:
     """Yield the answer's text as it is generated."""
     client = _client()
-    with client.messages.stream(**_params(system, messages)) as stream:
-        for text in stream.text_stream:
-            yield text
-        final = stream.get_final_message()
+    messages = list(messages)
+    # A server-side tool (web search) can pause a long turn: the API returns
+    # stop_reason "pause_turn" and expects the partial assistant turn back to
+    # resume it. Bounded so a misbehaving turn cannot loop forever.
+    for _ in range(MAX_PAUSE_RESUMES + 1):
+        with client.messages.stream(**_params(system, messages)) as stream:
+            for text in stream.text_stream:
+                yield text
+            final = stream.get_final_message()
+        if final.stop_reason != "pause_turn":
+            break
+        messages.append({"role": "assistant", "content": final.content})
     if final.stop_reason == "refusal":
         yield REFUSAL_TEXT
 
