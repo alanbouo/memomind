@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mail, KeyRound, ArrowRight, Zap, Clock, MessageSquare, Shield } from 'lucide-react'
+import { Mail, KeyRound, ArrowRight, Zap, Clock, MessageSquare, Shield, Smartphone } from 'lucide-react'
 import { requestEmailCode, verifyEmailCode } from '../services/api'
 import { setToken, setRefreshToken } from '../utils/auth'
 import { useRouteSeo } from '../utils/seo'
@@ -127,20 +127,22 @@ function Login({ setIsAuthenticated, setGuestMode }) {
               <p className="text-sm text-gray-500 mt-3">
                 Free trial: 5MB max file size • No signup required
               </p>
-            </div>
 
-            {/* iOS app */}
-            <p className="text-sm text-gray-600 mb-8">
-              Also available on iPhone:{' '}
+              <div className="flex items-center gap-3 my-5 text-xs uppercase tracking-wider text-gray-400">
+                <span className="flex-1 border-t border-gray-200"></span>
+                <span>or get the app</span>
+                <span className="flex-1 border-t border-gray-200"></span>
+              </div>
               <a
                 href="https://apps.apple.com/fr/app/memomind-m%C3%A9mos-vocaux-ia/id6825675614"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-primary-800 dark:text-primary-400 font-medium hover:underline"
+                className="w-full py-4 bg-gray-900 text-white text-lg font-medium rounded-lg hover:bg-black transition-colors flex items-center justify-center gap-2"
               >
+                <Smartphone className="w-5 h-5" />
                 Download on the App Store
               </a>
-            </p>
+            </div>
 
             {/* Privacy Banner */}
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-8 flex items-center gap-4">
