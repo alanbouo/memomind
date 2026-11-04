@@ -50,3 +50,5 @@ Règle des builds iOS : `backlog-projets.md` du dépôt de pilotage.
 
 - Aucune requête réelle n'a été faite avec la recherche web.
 - Réussite des déploiements de `50adc1b` et de `16c5e7b` (correctif `pause_turn`).
+- Enregistrement web (invité, pause) : testé dans Chrome avec un flux audio généré et
+  une API simulée. Ni vrai micro, ni Safari, ni transcription réelle par le serveur.
