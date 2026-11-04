@@ -34,7 +34,7 @@ from api.auth import (
     create_refresh_token,
     decode_token
 )
-from api import llm, push, voice
+from api import guest_limit, llm, push, voice
 from api.prompts import PRESETS as PROMPT_PRESETS
 import json
 import jwt
@@ -496,7 +496,8 @@ async def transcribe_endpoint(
 
 
 @app.post("/transcribe/guest")
-async def transcribe_guest(
+def transcribe_guest(
+    request: Request,
     file: UploadFile = File(...),
     quality: str = Form("medium")
 ):
@@ -529,6 +530,10 @@ async def transcribe_guest(
                 "upgrade_required": True
             }
         )
+
+    limited = guest_limit.rejection(request, "transcribe", guest_limit.TRANSCRIBE_LIMIT_PER_HOUR)
+    if limited:
+        return limited
 
     # Generate unique ID for this guest transcription
     unique_id = f"guest_{uuid.uuid4().hex[:12]}"
@@ -615,7 +620,8 @@ async def transcribe_guest(
 
 
 @app.post("/chat/guest")
-async def chat_with_transcript_guest(
+def chat_with_transcript_guest(
+    request: Request,
     message: str = Form(...),
     transcript_text: str = Form(...)
 ):
@@ -623,6 +629,16 @@ async def chat_with_transcript_guest(
     Guest chat endpoint - uses default prompts only.
     Transcript text must be provided since guests have no saved transcripts.
     """
+    if len(message) > guest_limit.MAX_MESSAGE_CHARS or len(transcript_text) > guest_limit.MAX_TRANSCRIPT_CHARS:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Texte trop long pour le mode invité. Créez un compte pour continuer.", "upgrade_required": True},
+        )
+
+    limited = guest_limit.rejection(request, "chat", guest_limit.CHAT_LIMIT_PER_HOUR)
+    if limited:
+        return limited
+
     try:
         ai_response = llm.reply(
             llm.system_blocks(transcript_text),
