@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { FileAudio, X, AlertCircle, Plus, Mic, Square, Upload as UploadIcon } from 'lucide-react'
+import { FileAudio, X, AlertCircle, Plus, Mic, Square, Pause, Play, Upload as UploadIcon } from 'lucide-react'
 import { startTranscription } from '../services/api'
 
 const MAX_SIZE = 100 * 1024 * 1024
 const QUALITY = 'medium'
+// A recording stops this far below the size limit: the recorder's last chunk is still to come.
+const RECORDING_MARGIN = 128 * 1024
 
 const clock = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 
@@ -14,8 +16,10 @@ const recorderFormat = () => {
 }
 
 // Live audiogram of the microphone: one bar every 60 ms, scrolling left, drawn from the input's loudness.
-function Waveform({ stream }) {
+function Waveform({ stream, paused }) {
   const canvasRef = useRef(null)
+  const pausedRef = useRef(paused)
+  pausedRef.current = paused
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -37,6 +41,7 @@ function Waveform({ stream }) {
     const bars = new Array(Math.floor(width / step)).fill(0)
 
     const draw = () => {
+      if (pausedRef.current) return
       analyser.getByteTimeDomainData(samples)
       let peak = 0
       for (const v of samples) peak = Math.max(peak, Math.abs(v - 128))
@@ -59,7 +64,10 @@ function Waveform({ stream }) {
   return <canvas ref={canvasRef} className="w-full h-16" aria-hidden="true" />
 }
 
-function Upload({ onTranscriptStarted }) {
+const defaultSubmit = (file, onProgress) => startTranscription(file, QUALITY, onProgress)
+const defaultProgressLabel = () => 'Envoi du fichier…'
+
+function Upload({ onTranscriptStarted, submit = defaultSubmit, maxSize = MAX_SIZE, progressLabel = defaultProgressLabel }) {
   const [file, setFile] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -67,10 +75,12 @@ function Upload({ onTranscriptStarted }) {
   const [status, setStatus] = useState(null) // 'success' | 'error'
   const [message, setMessage] = useState('')
   const [recording, setRecording] = useState(false)
+  const [paused, setPaused] = useState(false)
   const [micStream, setMicStream] = useState(null)
   const [elapsed, setElapsed] = useState(0)
   const [preview, setPreview] = useState(null)
   const fileInputRef = useRef(null)
+  const sizeLabel = `${Math.round(maxSize / 1024 / 1024)} Mo`
   const recorderRef = useRef(null)
   const chunksRef = useRef([])
   const canRecord = Boolean(navigator.mediaDevices?.getUserMedia) && recorderFormat() !== null
@@ -84,10 +94,10 @@ function Upload({ onTranscriptStarted }) {
   }, [file])
 
   useEffect(() => {
-    if (!recording) return
+    if (!recording || paused) return
     const timer = setInterval(() => setElapsed((n) => n + 1), 1000)
     return () => clearInterval(timer)
-  }, [recording])
+  }, [recording, paused])
 
   // Leaving the page must release the microphone.
   useEffect(() => () => recorderRef.current?.stream?.getTracks().forEach((t) => t.stop()), [])
@@ -100,7 +110,7 @@ function Upload({ onTranscriptStarted }) {
   const select = (picked) => {
     const ok = picked.type.startsWith('audio/') || picked.type.startsWith('video/') || /\.(m4a|mp3|wav|mp4|mov|m4v|webm|ogg|aac|flac)$/i.test(picked.name)
     if (!ok) return fail('Format non pris en charge. Choisissez un fichier audio ou vidéo (.m4a, .mp3, .wav, .mp4, .mov, .webm…).')
-    if (picked.size > MAX_SIZE) return fail('Ce fichier dépasse 100 Mo.')
+    if (picked.size > maxSize) return fail(`Ce fichier dépasse ${sizeLabel}.`)
     setFile(picked)
     setStatus(null)
     setMessage('')
@@ -126,18 +136,32 @@ function Upload({ onTranscriptStarted }) {
       const mimeType = recorderFormat()
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
       chunksRef.current = []
-      recorder.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data)
+      let recorded = 0
+      recorder.ondataavailable = (e) => {
+        if (!e.data.size) return
+        chunksRef.current.push(e.data)
+        recorded += e.data.size
+        if (recorded >= maxSize - RECORDING_MARGIN && recorder.state !== 'inactive') {
+          recorder.stop()
+          fail(`Limite de ${sizeLabel} atteinte : l'enregistrement a été arrêté. Vous pouvez transcrire ce qui a été capté.`)
+        }
+      }
+      // Also fires when the browser ends the recording itself (microphone unplugged, permission withdrawn).
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop())
+        setRecording(false)
+        setPaused(false)
+        setMicStream(null)
         const type = recorder.mimeType || 'audio/webm'
         const stamp = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '')
         setFile(new File(chunksRef.current, `enregistrement-${stamp}.${type.includes('mp4') ? 'm4a' : 'webm'}`, { type }))
       }
-      recorder.start()
+      recorder.start(1000) // chunks every second, so the size limit is seen while recording
       recorderRef.current = recorder
       setMicStream(stream)
       setFile(null)
       setElapsed(0)
+      setPaused(false)
       setRecording(true)
     } catch {
       fail("Le micro n'est pas accessible. Autorisez-le dans votre navigateur, ou importez un fichier.")
@@ -145,14 +169,25 @@ function Upload({ onTranscriptStarted }) {
   }
 
   const stopRecording = () => {
-    recorderRef.current?.stop()
-    setRecording(false)
-    setMicStream(null)
+    if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop()
+  }
+
+  const togglePause = () => {
+    const recorder = recorderRef.current
+    if (recorder?.state === 'recording') {
+      recorder.pause()
+      setPaused(true)
+    } else if (recorder?.state === 'paused') {
+      recorder.resume()
+      setPaused(false)
+    }
   }
 
   const reset = () => {
     setFile(null)
     setProgress(0)
+    setStatus(null)
+    setMessage('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -163,7 +198,7 @@ function Upload({ onTranscriptStarted }) {
     setStatus(null)
     setMessage('')
     try {
-      await startTranscription(file, QUALITY, setProgress)
+      await submit(file, setProgress)
       reset()
       onTranscriptStarted?.()
     } catch (error) {
@@ -186,12 +221,19 @@ function Upload({ onTranscriptStarted }) {
       >
         {recording ? (
           <div className="flex flex-col items-center gap-4 py-6 px-4 border border-primary-600/60 rounded-lg">
-            <Waveform stream={micStream} />
+            <Waveform stream={micStream} paused={paused} />
             <div className="flex items-center gap-3 font-mono text-2xl text-gray-900 dark:text-white">
-              <span className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
+              <span className={`w-3 h-3 rounded-full ${paused ? 'bg-gray-400' : 'bg-red-600 animate-pulse'}`} />
               {clock(elapsed)}
+              {paused && <span className="text-sm text-gray-500 dark:text-gray-400">en pause</span>}
             </div>
-            <button onClick={stopRecording} className="btn-primary flex items-center gap-2"><Square className="w-4 h-4" />Arrêter</button>
+            <div className="flex items-center gap-3">
+              <button onClick={togglePause} className="btn-secondary flex items-center gap-2">
+                {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                {paused ? 'Reprendre' : 'Pause'}
+              </button>
+              <button onClick={stopRecording} className="btn-primary flex items-center gap-2"><Square className="w-4 h-4" />Arrêter</button>
+            </div>
           </div>
         ) : !file ? (
           <div className="grid sm:grid-cols-2 gap-3">
@@ -236,13 +278,13 @@ function Upload({ onTranscriptStarted }) {
       </div>
 
       {!file && !recording && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">M4A, MP3, WAV, MP4, MOV, WEBM… jusqu'à 100 Mo.</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">M4A, MP3, WAV, MP4, MOV, WEBM… jusqu'à {sizeLabel}.</p>
       )}
 
       {uploading && (
         <div className="mt-4">
           <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
-            <span>Envoi du fichier…</span>
+            <span>{progressLabel(progress)}</span>
             <span>{progress}%</span>
           </div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
