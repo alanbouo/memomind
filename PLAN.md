@@ -30,6 +30,10 @@ Version 1.0.1 posée par `638c7d6`, numéro de build attribué par EAS.
 - `50adc1b` (2026-10-29), côté mobile : phrase de consentement IA (`AiConsent.tsx`),
   qui mentionne la recherche web ; reprise après coupure réseau, sans l'erreur
   « network connection was lost ».
+- Fichiers importés (partage ou choix de fichier) gardés comme des enregistrements :
+  le lecteur et les passages cliquables fonctionnent aussi pour eux. Non exécuté sur
+  un appareil. Les formats qu'iOS ne lit pas resteraient sans lecture, ce qui n'est
+  pas vérifié pour un message vocal `.opus` ou `.ogg` (WhatsApp, Telegram).
 
 Règle des builds iOS : `backlog-projets.md` du dépôt de pilotage.
 
