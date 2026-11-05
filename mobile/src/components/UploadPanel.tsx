@@ -22,6 +22,7 @@ import {
   addRecording,
   deleteRecording,
   fileSize,
+  keepImport,
   latestDraft,
   markRecordingEnded,
   markRecordingStarted,
@@ -116,7 +117,7 @@ export function UploadPanel({ onSubmit, persist = false, maxBytes }: Props) {
         if (saved) setNote('Un enregistrement interrompu a été récupéré.')
       }
       const draft = latestDraft()
-      setAudio((current) => current ?? (draft ? { uri: draft.uri, name: draft.name, mimeType: mimeTypeFor(draft.uri), recordingId: draft.id } : null))
+      setAudio((current) => current ?? (draft ? { uri: draft.uri, name: draft.name, mimeType: draft.mimeType ?? mimeTypeFor(draft.uri), recordingId: draft.id } : null))
     }, [persist, session])
   )
 
@@ -127,7 +128,7 @@ export function UploadPanel({ onSubmit, persist = false, maxBytes }: Props) {
       const shared = takePendingImport()
       if (!shared || session !== 'idle') return
       setError(null)
-      setAudio(shared)
+      setAudio(keepImport(shared))
     }
     pickUp()
     return onPendingImport(pickUp)
@@ -151,7 +152,8 @@ export function UploadPanel({ onSubmit, persist = false, maxBytes }: Props) {
     })
     if (res.canceled) return
     const f = res.assets[0]
-    setAudio({ uri: f.uri, name: f.name, mimeType: f.mimeType ?? 'application/octet-stream' })
+    const picked = { uri: f.uri, name: f.name, mimeType: f.mimeType ?? 'application/octet-stream' }
+    setAudio(persist ? keepImport(picked) : picked)
   }
 
   const startRecording = async () => {

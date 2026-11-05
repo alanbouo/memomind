@@ -1,4 +1,5 @@
-import { File } from 'expo-file-system'
+import { File, Paths } from 'expo-file-system'
+import type { PickedAudio } from './api'
 import { readJson, writeJson } from './localStore'
 import { Marker, setMarkers } from './markers'
 import { getLocalPrefs } from './prefs'
@@ -13,6 +14,8 @@ export interface Recording {
   uri: string
   createdAt: string // ISO, device clock
   durationMs: number
+  /** Imported files only: their format can't be told from a recording's extensions. */
+  mimeType?: string
   /** Set once the file was sent for transcription (server-side id). */
   transcriptId?: number
   markers?: Marker[]
@@ -77,6 +80,21 @@ export function addRecording(r: Omit<Recording, 'id' | 'createdAt'> & { createdA
   const entry: Recording = { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, createdAt: new Date().toISOString(), ...r }
   save({ ...index, recordings: [entry, ...index.recordings] })
   return entry
+}
+
+/**
+ * Keep an imported file like a recording, so its transcript can play it back. The file moves out of
+ * the cache, which the OS may clean. If that fails the import still works, without playback.
+ */
+export function keepImport(audio: PickedAudio): PickedAudio {
+  try {
+    const file = new File(audio.uri)
+    file.moveSync(new File(Paths.document, `import-${Date.now()}${file.extension}`))
+    const entry = addRecording({ name: audio.name, uri: file.uri, durationMs: 0, mimeType: audio.mimeType })
+    return { ...audio, uri: file.uri, recordingId: entry.id }
+  } catch {
+    return audio
+  }
 }
 
 export function updateRecording(id: string, patch: Partial<Recording>) {

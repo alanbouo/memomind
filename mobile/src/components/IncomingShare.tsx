@@ -35,7 +35,7 @@ export function IncomingShare() {
     try {
       // The source can disappear (shared container, temporary content URI): work on our own copy.
       const copy = new File(Paths.cache, `import-${Date.now()}-${name.replace(/[^\w.-]+/g, '_')}`)
-      new File(uri).copy(copy)
+      new File(uri).copySync(copy)
       setPendingImport({ uri: copy.uri, name, mimeType: mime || 'application/octet-stream' })
       router.navigate('/')
     } catch {
