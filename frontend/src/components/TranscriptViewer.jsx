@@ -65,6 +65,7 @@ function TranscriptViewer({ transcripts, onTranscriptDeleted, onTranscriptChange
   const [tagFilter, setTagFilter] = useState(null)
   const [showArchived, setShowArchived] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedCard, setCopiedCard] = useState(null)
   const [showTimestamps, setShowTimestamps] = useState(true)
   const [error, setError] = useState('')
   const opened = useRef(0) // guards against a slow response for a transcript that was closed or replaced
@@ -208,6 +209,25 @@ function TranscriptViewer({ transcripts, onTranscriptDeleted, onTranscriptChange
     }
   }
 
+  const copyFromCard = async (transcript) => {
+    // The clipboard write starts right away, with the text still loading:
+    // Safari refuses a write that begins after an await, outside the click.
+    const blob = getTranscriptUtterances(transcript.database_id).then(({ utterances, speakers }) => {
+      const text = utterances.length
+        ? renderTranscriptText(utterances, (label) => speakers[label] || label, showTimestamps)
+        : transcript.content // older entries have no structured utterances
+      if (!text) throw new Error('empty transcript')
+      return new Blob([text], { type: 'text/plain' })
+    })
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })])
+      setCopiedCard(transcript.database_id)
+      setTimeout(() => setCopiedCard((current) => (current === transcript.database_id ? null : current)), 2000)
+    } catch {
+      flash('Copie impossible')
+    }
+  }
+
   const regenerate = async () => {
     setSummarizing(true)
     try {
@@ -301,27 +321,34 @@ function TranscriptViewer({ transcripts, onTranscriptDeleted, onTranscriptChange
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  {renaming === t.database_id ? (
-                    <div className="flex items-center gap-2 mb-1" onClick={(e) => e.stopPropagation()}>
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
+                    {t.pinned && <Pin className="w-3.5 h-3.5 text-primary-700 dark:text-primary-400 shrink-0" aria-label="Épinglée" />}
+                    {renaming === t.database_id ? (
                       <input
                         value={renameValue}
+                        aria-label="Titre de la transcription"
                         onChange={(e) => setRenameValue(e.target.value)}
-                        className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={() => saveRename(t)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') saveRename(t)
                           if (e.key === 'Escape') setRenaming(null)
                         }}
+                        autoFocus
+                        className="flex-1 min-w-0 px-1 -mx-1 rounded bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
                       />
-                      <button onClick={() => saveRename(t)} aria-label="Enregistrer" className="p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded"><Check className="w-4 h-4" /></button>
-                      <button onClick={() => setRenaming(null)} aria-label="Annuler" className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"><X className="w-4 h-4" /></button>
-                    </div>
-                  ) : (
-                    <h3 className="font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
-                      {t.pinned && <Pin className="w-3.5 h-3.5 text-primary-700 dark:text-primary-400 shrink-0" aria-label="Épinglée" />}
+                    ) : processing || failed ? (
                       <span className="truncate">{t.filename}</span>
-                    </h3>
-                  )}
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setRenaming(t.database_id); setRenameValue(t.filename) }}
+                        title="Renommer"
+                        className="min-w-0 truncate text-left font-semibold cursor-text hover:underline decoration-dotted underline-offset-4"
+                      >
+                        {t.filename}
+                      </button>
+                    )}
+                  </h3>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400">
                     <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" />{formatDate(t.timestamp)}</span>
                     {t.word_count > 0 && <span className="flex items-center gap-1.5"><FileAudio className="w-4 h-4" />{formatWordCount(t.word_count)}</span>}
@@ -332,7 +359,9 @@ function TranscriptViewer({ transcripts, onTranscriptDeleted, onTranscriptChange
                 <div className="flex shrink-0">
                   {!processing && !failed && (
                     <>
-                      <IconButton label="Renommer" onClick={() => { setRenaming(t.database_id); setRenameValue(t.filename) }}><Pencil className="w-4 h-4" /></IconButton>
+                      <IconButton label={copiedCard === t.database_id ? 'Copié !' : 'Copier la transcription'} onClick={() => copyFromCard(t)}>
+                        {copiedCard === t.database_id ? <CheckCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      </IconButton>
                       {!t.archived && <IconButton label={t.pinned ? 'Désépingler' : 'Épingler'} onClick={() => toggle(t, 'pinned')}><Pin className={`w-4 h-4 ${t.pinned ? 'fill-current' : ''}`} /></IconButton>}
                       <IconButton label={t.archived ? 'Désarchiver' : 'Archiver'} onClick={() => toggle(t, 'archived')}>
                         {t.archived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
